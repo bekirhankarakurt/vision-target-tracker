@@ -10,8 +10,8 @@
 namespace vtt {
 
 struct ScaleFilterParams {
-    int num_scales = 17;          ///< Pyramid levels (odd).
-    double scale_step = 1.02;     ///< Ratio between consecutive levels.
+    int num_scales = 15;          ///< Pyramid levels (odd).
+    double scale_step = 1.025;    ///< Ratio between consecutive levels.
     double output_sigma = 0.25;   ///< Gaussian label std-dev, in units of sqrt(num_scales).
     double learning_rate = 0.025;
     double regularization = 1e-2;
