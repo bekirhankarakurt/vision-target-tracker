@@ -155,8 +155,9 @@ Tracker::Candidate Tracker::evaluate(const cv::Mat& gray, const cv::Point2d& cen
     const cv::Size patch = filter_->patch_size();
     const double sx = static_cast<double>(window.width) / static_cast<double>(patch.width);
     const double sy = static_cast<double>(window.height) / static_cast<double>(patch.height);
-    const cv::Point2d displacement((peak.location.x - static_cast<double>(patch.width / 2)) * sx,
-                                   (peak.location.y - static_cast<double>(patch.height / 2)) * sy);
+    const cv::Point2d origin = spectral::response_center(patch);
+    const cv::Point2d displacement((peak.location.x - origin.x) * sx,
+                                   (peak.location.y - origin.y) * sy);
     Candidate candidate;
     candidate.window = cv::Rect2d(window);
     candidate.center = rect_center(candidate.window) + displacement;

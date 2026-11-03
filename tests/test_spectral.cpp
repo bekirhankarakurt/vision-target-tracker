@@ -62,7 +62,7 @@ VTT_TEST(psr_separates_sharp_peak_from_noise) {
     cv::Mat noise(64, 64, CV_32F);
     cv::RNG rng(11);
     rng.fill(noise, cv::RNG::NORMAL, 0.0, 0.05);
-    cv::Mat sharp = noise + spectral::gaussian_peak(noise.size(), 2.0);
+    const cv::Mat sharp = noise + spectral::gaussian_peak(noise.size(), 2.0);
     const double psr_sharp = spectral::peak_to_sidelobe_ratio(sharp, spectral::find_peak(sharp));
     const double psr_noise = spectral::peak_to_sidelobe_ratio(noise, spectral::find_peak(noise));
     CHECK(psr_sharp > 15.0);

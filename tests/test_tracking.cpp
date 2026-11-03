@@ -4,7 +4,8 @@
 #include "vtt/synthetic.hpp"
 #include "vtt/tracker.hpp"
 
-#include <cstdio>
+#include <iomanip>
+#include <iostream>
 
 using namespace vtt;
 
@@ -42,10 +43,11 @@ RunSummary run_sequence(Algorithm algorithm, const SyntheticConfig& config) {
             summary.reacquired = summary.reacquired || lost_seen;
         }
     }
-    std::printf("  %s: IoU %.3f  CE %.2f px  success %.3f  (visible IoU %.3f)  occluded %d  lost %d\n",
-                std::string(to_string(algorithm)).c_str(), summary.accuracy.mean_iou(),
-                summary.accuracy.mean_center_error(), summary.accuracy.success_rate(),
-                summary.visible_accuracy.mean_iou(), summary.occluded_frames, summary.lost_frames);
+    std::cout << std::fixed << std::setprecision(3) << "  " << to_string(algorithm) << ": IoU "
+              << summary.accuracy.mean_iou() << "  CE " << summary.accuracy.mean_center_error()
+              << " px  success " << summary.accuracy.success_rate() << "  (visible IoU "
+              << summary.visible_accuracy.mean_iou() << ")  occluded " << summary.occluded_frames
+              << "  lost " << summary.lost_frames << '\n';
     return summary;
 }
 

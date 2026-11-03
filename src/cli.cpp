@@ -1,5 +1,6 @@
 #include "vtt/cli.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <sstream>
@@ -37,12 +38,7 @@ bool takes_value(const std::string& flag) {
         "--input", "-i", "--camera", "--algo", "--roi", "--gt", "--csv", "--output",
         "--max-frames", "--psr-threshold", "--hfov", "--pid-kp", "--pid-ki", "--pid-kd",
         "--max-rate", "--max-accel", "--min-iou", "--max-center-error"};
-    for (const char* f : flags) {
-        if (flag == f) {
-            return true;
-        }
-    }
-    return false;
+    return std::any_of(flags.begin(), flags.end(), [&flag](const char* f) { return flag == f; });
 }
 
 }  // namespace
@@ -82,7 +78,7 @@ ParseResult parse_arguments(const std::vector<std::string>& args) {
         const bool inline_value = flag.rfind("--", 0) == 0 && eq != std::string::npos;
         if (inline_value) {
             value = flag.substr(eq + 1);
-            flag = flag.substr(0, eq);
+            flag.resize(eq);
         }
         if (takes_value(flag) && !inline_value) {
             if (i + 1 >= args.size()) {
@@ -145,11 +141,14 @@ ParseResult parse_arguments(const std::vector<std::string>& args) {
             o.gimbal.horizontal_fov_deg = *number();
         } else if (flag == "--pid-kp" || flag == "--pid-ki" || flag == "--pid-kd") {
             if (!number() || *number() < 0.0) {
-                return fail("invalid gain for " + flag + ": " + value);
+                return fail("invalid gain: " + value);
             }
-            double PidConfig::*gain = flag == "--pid-kp"   ? &PidConfig::kp
-                                      : flag == "--pid-ki" ? &PidConfig::ki
-                                                           : &PidConfig::kd;
+            double PidConfig::*gain = &PidConfig::kd;
+            if (flag == "--pid-kp") {
+                gain = &PidConfig::kp;
+            } else if (flag == "--pid-ki") {
+                gain = &PidConfig::ki;
+            }
             o.gimbal.pan_pid.*gain = *number();
             o.gimbal.tilt_pid.*gain = *number();
         } else if (flag == "--max-rate") {

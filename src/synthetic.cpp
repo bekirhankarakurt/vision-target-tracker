@@ -23,7 +23,7 @@ cv::Mat smooth_noise(cv::Size size, double blur_sigma, double lo, double hi, cv:
 cv::Mat make_background(cv::Size size, cv::RNG& rng) {
     const cv::Mat coarse = smooth_noise(size, 18.0, 60.0, 170.0, rng);
     const cv::Mat fine = smooth_noise(size, 1.5, -12.0, 12.0, rng);
-    cv::Mat gray = coarse + fine;
+    const cv::Mat gray = coarse + fine;
     cv::Mat gray8;
     gray.convertTo(gray8, CV_8U);
     cv::Mat bgr;
@@ -88,7 +88,7 @@ SyntheticScene::SyntheticScene(const SyntheticConfig& config) : config_(config) 
 }
 
 cv::Rect2d SyntheticScene::target_box(int frame) const {
-    const double t = static_cast<double>(frame);
+    const auto t = static_cast<double>(frame);
     const double cx = 0.5 * static_cast<double>(config_.frame_size.width) +
                       config_.amplitude.x * std::sin(kTwoPi * t / config_.period_x);
     const double cy = 0.5 * static_cast<double>(config_.frame_size.height) +
@@ -108,8 +108,8 @@ cv::Rect2d SyntheticScene::occluder_box(int frame) const {
         return {};
     }
     const cv::Rect2d target = target_box(frame);
-    const double w = static_cast<double>(occluder_texture_.cols);
-    const double h = static_cast<double>(occluder_texture_.rows);
+    const auto w = static_cast<double>(occluder_texture_.cols);
+    const auto h = static_cast<double>(occluder_texture_.rows);
     // Horizontal offset: slides in from the left, holds over the target, slides out to the right.
     const double travel = 0.5 * (w + target.width) + 2.0;
     double offset = 0.0;
