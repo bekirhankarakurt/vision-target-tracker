@@ -68,13 +68,9 @@ void draw_gimbal_view(cv::Mat& canvas, const cv::Mat& source, const GimbalSim& g
     const cv::Size crop_size(std::max(8, cvRound(canvas.cols / zoom)),
                              std::max(8, cvRound(canvas.rows / zoom)));
     const cv::Point2d bore = gimbal.boresight_pixel();
-    const cv::Rect crop(cvRound(bore.x - 0.5 * crop_size.width),
-                        cvRound(bore.y - 0.5 * crop_size.height), crop_size.width, crop_size.height);
-    const cv::Rect inside = crop & cv::Rect(0, 0, source.cols, source.rows);
-    cv::Mat view(crop_size, source.type(), cv::Scalar::all(0));
-    if (inside.area() > 0) {
-        source(inside).copyTo(view(cv::Rect(inside.tl() - crop.tl(), inside.size())));
-    }
+    cv::Mat view;
+    cv::getRectSubPix(source, crop_size,
+                      cv::Point2f(static_cast<float>(bore.x), static_cast<float>(bore.y)), view);
     const int inset_w = canvas.cols * 3 / 10;
     const int inset_h = inset_w * canvas.rows / std::max(1, canvas.cols);
     const cv::Rect inset(canvas.cols - inset_w - 10, canvas.rows - inset_h - 10, inset_w, inset_h);

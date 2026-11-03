@@ -5,21 +5,23 @@
 
 #include <opencv2/imgproc.hpp>
 
+#include <algorithm>
+
 namespace vtt {
 
 KcfFilter::KcfFilter(const FilterParams& params) : params_(params) {}
 
 KcfFilter::Spectra KcfFilter::extract(const cv::Mat& patch) const {
-    Spectra spectra;
-    for (const cv::Mat& channel : features::kcf_channels(patch, window_)) {
-        spectra.push_back(spectral::fft(channel));
-    }
+    const std::vector<cv::Mat> channels = features::kcf_channels(patch, window_);
+    Spectra spectra(channels.size());
+    std::transform(channels.begin(), channels.end(), spectra.begin(),
+                   [](const cv::Mat& channel) { return spectral::fft(channel); });
     return spectra;
 }
 
 cv::Mat KcfFilter::kernel_correlation(const Spectra& xf, const Spectra& zf) const {
     CV_Assert(xf.size() == zf.size() && !xf.empty());
-    const double n = static_cast<double>(size_.area());
+    const auto n = static_cast<double>(size_.area());
     double xx = 0.0;
     double zz = 0.0;
     cv::Mat cross = cv::Mat::zeros(size_, CV_32FC2);

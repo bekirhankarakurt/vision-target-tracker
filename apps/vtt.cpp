@@ -12,8 +12,9 @@
 #include <opencv2/videoio.hpp>
 
 #include <chrono>
-#include <cstdio>
+#include <cmath>
 #include <exception>
+#include <iomanip>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -112,7 +113,7 @@ int run(const vtt::AppOptions& options) {
 
     const bool from_file = options.input.has_value();
     double source_fps = capture.get(cv::CAP_PROP_FPS);
-    if (!(source_fps > 1.0 && source_fps < 1000.0)) {
+    if (std::isnan(source_fps) || source_fps <= 1.0 || source_fps >= 1000.0) {
         source_fps = 30.0;
     }
 
@@ -232,32 +233,34 @@ int run(const vtt::AppOptions& options) {
     }
     const double wall_s = elapsed_ms(run_start, Clock::now()) / 1000.0;
 
-    std::printf("vtt %s | %s | %ld frames | %dx%d | %s\n", VTT_VERSION,
-                std::string(vtt::to_string(algorithm)).c_str(), index, frame_size.width, frame_size.height,
-                options.input ? options.input->c_str() : "camera");
+    std::cout << std::fixed << std::setprecision(3) << "vtt " << VTT_VERSION << " | "
+              << vtt::to_string(algorithm) << " | " << index << " frames | " << frame_size.width
+              << 'x' << frame_size.height << " | "
+              << (options.input ? *options.input : std::string("camera")) << '\n';
     if (latency.count() > 0) {
-        std::printf("latency ms  mean %.3f  p50 %.3f  p95 %.3f  max %.3f\n", latency.mean(),
-                    latency.percentile(50.0), latency.percentile(95.0), latency.max());
-        std::printf("throughput  tracker %.1f fps  pipeline %.1f fps\n", 1000.0 / latency.mean(),
-                    static_cast<double>(index) / std::max(wall_s, 1e-9));
+        std::cout << "latency ms  mean " << latency.mean() << "  p50 " << latency.percentile(50.0)
+                  << "  p95 " << latency.percentile(95.0) << "  max " << latency.max() << '\n'
+                  << std::setprecision(1) << "throughput  tracker " << 1000.0 / latency.mean()
+                  << " fps  pipeline " << static_cast<double>(index) / std::max(wall_s, 1e-9)
+                  << " fps\n";
     }
     int exit_code = 0;
     if (accuracy.count() > 0) {
-        std::printf("accuracy    mean IoU %.3f  centre error %.2f px  success@0.5 %.3f  "
-                    "precision@20px %.3f\n",
-                    accuracy.mean_iou(), accuracy.mean_center_error(), accuracy.success_rate(),
-                    accuracy.precision_20px());
+        std::cout << std::setprecision(3) << "accuracy    mean IoU " << accuracy.mean_iou()
+                  << "  centre error " << std::setprecision(2) << accuracy.mean_center_error()
+                  << " px  success@0.5 " << std::setprecision(3) << accuracy.success_rate()
+                  << "  precision@20px " << accuracy.precision_20px() << '\n';
         if (options.min_iou && accuracy.mean_iou() < *options.min_iou) {
-            std::fprintf(stderr, "FAIL: mean IoU %.3f < %.3f\n", accuracy.mean_iou(), *options.min_iou);
+            std::cerr << "FAIL: mean IoU " << accuracy.mean_iou() << " < " << *options.min_iou << '\n';
             exit_code = kExitThreshold;
         }
         if (options.max_center_error && accuracy.mean_center_error() > *options.max_center_error) {
-            std::fprintf(stderr, "FAIL: mean centre error %.2f > %.2f px\n",
-                         accuracy.mean_center_error(), *options.max_center_error);
+            std::cerr << "FAIL: mean centre error " << accuracy.mean_center_error() << " > "
+                      << *options.max_center_error << " px\n";
             exit_code = kExitThreshold;
         }
     } else if (options.min_iou || options.max_center_error) {
-        std::fprintf(stderr, "FAIL: accuracy thresholds given but no ground truth matched\n");
+        std::cerr << "FAIL: accuracy thresholds given but no ground truth matched\n";
         exit_code = kExitThreshold;
     }
     return exit_code;

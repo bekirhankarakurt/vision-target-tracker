@@ -9,6 +9,9 @@ namespace vtt::spectral {
 /// 2-D Hann (cosine) window, CV_32F.
 [[nodiscard]] cv::Mat hann_window(cv::Size size);
 
+/// Integer centre (width/2, height/2) where a centred response peaks.
+[[nodiscard]] cv::Point2d response_center(cv::Size size) noexcept;
+
 /// Gaussian peak of standard deviation @p sigma centred at (width/2, height/2), CV_32F.
 [[nodiscard]] cv::Mat gaussian_peak(cv::Size size, double sigma);
 
