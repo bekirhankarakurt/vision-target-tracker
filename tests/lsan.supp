@@ -1,0 +1,3 @@
+# Leaks inside third-party camera backends probed by cv::VideoCapture::open.
+leak:libgphoto2
+leak:libgphoto2_port
