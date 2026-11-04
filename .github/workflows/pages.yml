@@ -41,7 +41,7 @@ jobs:
           cp -r build/docs/html site/api
       - name: Landing page
         run: cp docs/site/index.html site/index.html
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
