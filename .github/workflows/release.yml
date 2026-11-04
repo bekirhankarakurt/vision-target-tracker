@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish linux-x86_64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libopencv-dev cmake ninja-build
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVTT_WARNINGS_AS_ERRORS=ON
+          cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j 4
+      - name: Package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          name="vision-target-tracker-${version}-linux-x86_64"
+          mkdir -p "dist/${name}/bin"
+          cp build/vtt build/vtt_synth "dist/${name}/bin/"
+          strip "dist/${name}/bin/"*
+          cp README.md LICENSE CHANGELOG.md "dist/${name}/"
+          cat > "dist/${name}/RUNTIME.txt" <<TXT
+          vision-target-tracker ${version} (linux-x86_64, built on Ubuntu 24.04)
+
+          Runtime requirement: OpenCV 4.6 shared libraries (core, imgproc, videoio, highgui).
+            sudo apt-get install libopencv-core406t64 libopencv-imgproc406t64 libopencv-videoio406t64 libopencv-highgui406t64
+          or simply: sudo apt-get install libopencv-dev
+
+          Quick check: ./bin/vtt --version
+          TXT
+          tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+          (cd dist && sha256sum "${name}.tar.gz" > SHA256SUMS)
+          cat dist/SHA256SUMS
+      - name: Release notes from CHANGELOG
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            $0 ~ "^## \\[" ver "\\]" {found=1; next}
+            found && /^## \[/ {exit}
+            found {print}
+          ' CHANGELOG.md > notes.md
+          printf '\n**Runtime requirement:** OpenCV 4.6 shared libraries (`sudo apt-get install libopencv-dev` on Ubuntu 24.04). Verify the download with `sha256sum -c SHA256SUMS`.\n' >> notes.md
+          cat notes.md
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS \
+            --title "vision-target-tracker ${GITHUB_REF_NAME}" --notes-file notes.md --verify-tag
