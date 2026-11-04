@@ -72,3 +72,22 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: ctest --test-dir build --output-on-failure -j 4
+
+  static-analysis:
+    name: clang-tidy + cppcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libopencv-dev cmake ninja-build clang clang-tidy cppcheck
+      - name: Configure (compile_commands.json)
+        run: cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+      - name: clang-tidy
+        run: run-clang-tidy -p build -quiet "$PWD/(src|apps|tests)/"
+      - name: cppcheck
+        run: >
+          cppcheck --enable=warning,style,performance,portability --std=c++17
+          --inline-suppr --error-exitcode=1 --suppress=missingIncludeSystem --quiet
+          -I include src apps tests
