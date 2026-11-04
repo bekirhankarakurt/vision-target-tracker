@@ -71,14 +71,13 @@ VTT_TEST(kcf_tracks_synthetic_sequence) { check_default_sequence(Algorithm::Kcf)
 
 VTT_TEST(long_occlusion_goes_lost_and_reacquires) {
     SyntheticConfig config;
-    config.num_frames = 240;
-    config.occlusion_start = 90;
-    config.occlusion_hold = 25;
+    config.occlusion_hold = 35;  // target changes scale by ~25 % while hidden
     for (const Algorithm algorithm : {Algorithm::Mosse, Algorithm::Kcf}) {
         const RunSummary s = run_sequence(algorithm, config);
         CHECK(s.lost_frames > 0);
         CHECK(s.reacquired);
-        CHECK(s.tracking_after_occlusion > 60);
+        CHECK(s.tracking_after_occlusion > 80);
+        CHECK(s.accuracy.mean_iou() > 0.7);
     }
 }
 
