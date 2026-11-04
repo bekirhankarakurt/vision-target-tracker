@@ -44,8 +44,8 @@ VTT_TEST(scale_filter_detects_growth_and_shrink) {
 VTT_TEST(scale_filter_factors_are_symmetric) {
     const ScaleFilter filter(ScaleFilterParams{});
     const auto& f = filter.factors();
-    CHECK(f.size() == 17U);
-    CHECK_NEAR(f[8], 1.0, 1e-12);
+    CHECK(f.size() == 15U);
+    CHECK_NEAR(f[7], 1.0, 1e-12);
     CHECK_NEAR(f.front() * f.back(), 1.0, 1e-12);
 }
 
