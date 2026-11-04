@@ -13,10 +13,17 @@ cv::Mat hann_window(cv::Size size) {
     return window;
 }
 
+cv::Point2d response_center(cv::Size size) noexcept {
+    const int cx = size.width / 2;
+    const int cy = size.height / 2;
+    return {static_cast<double>(cx), static_cast<double>(cy)};
+}
+
 cv::Mat gaussian_peak(cv::Size size, double sigma) {
     cv::Mat peak(size, CV_32F);
-    const double cx = static_cast<double>(size.width / 2);
-    const double cy = static_cast<double>(size.height / 2);
+    const cv::Point2d c = response_center(size);
+    const double cx = c.x;
+    const double cy = c.y;
     const double scale = -0.5 / (sigma * sigma);
     for (int y = 0; y < size.height; ++y) {
         auto* row = peak.ptr<float>(y);
@@ -94,13 +101,13 @@ Peak find_peak(const cv::Mat& response) {
     const int h = response.rows;
     peak.location = cv::Point2d(x, y);
     if (w >= 3) {
-        const double left = static_cast<double>(response.at<float>(y, (x - 1 + w) % w));
-        const double right = static_cast<double>(response.at<float>(y, (x + 1) % w));
+        const auto left = static_cast<double>(response.at<float>(y, (x - 1 + w) % w));
+        const auto right = static_cast<double>(response.at<float>(y, (x + 1) % w));
         peak.location.x += parabolic_offset(left, peak.value, right);
     }
     if (h >= 3) {
-        const double up = static_cast<double>(response.at<float>((y - 1 + h) % h, x));
-        const double down = static_cast<double>(response.at<float>((y + 1) % h, x));
+        const auto up = static_cast<double>(response.at<float>((y - 1 + h) % h, x));
+        const auto down = static_cast<double>(response.at<float>((y + 1) % h, x));
         peak.location.y += parabolic_offset(up, peak.value, down);
     }
     return peak;
@@ -119,7 +126,7 @@ double peak_to_sidelobe_ratio(const cv::Mat& response, const Peak& peak, int exc
             if (row_excluded && std::abs(x - p.x) <= exclusion_radius) {
                 continue;
             }
-            const double v = static_cast<double>(row[x]);
+            const auto v = static_cast<double>(row[x]);
             sum += v;
             sum_sq += v * v;
             ++count;
@@ -128,7 +135,7 @@ double peak_to_sidelobe_ratio(const cv::Mat& response, const Peak& peak, int exc
     if (count < 2) {
         return 0.0;
     }
-    const double n = static_cast<double>(count);
+    const auto n = static_cast<double>(count);
     const double mean = sum / n;
     const double variance = std::max(sum_sq / n - mean * mean, 0.0);
     return (peak.value - mean) / (std::sqrt(variance) + 1e-9);

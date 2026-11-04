@@ -7,6 +7,8 @@
 
 #include <opencv2/imgproc.hpp>
 
+#include <array>
+
 using namespace vtt;
 
 namespace {
@@ -38,7 +40,7 @@ void check_translation(Algorithm algorithm) {
     CHECK(filter->patch_size() == size);
     CHECK(filter->algorithm() == algorithm);
 
-    const cv::Point2d shifts[] = {{0.0, 0.0}, {5.0, -3.0}, {-7.5, 4.25}, {2.0, 9.0}};
+    const std::array<cv::Point2d, 4> shifts{{{0.0, 0.0}, {5.0, -3.0}, {-7.5, 4.25}, {2.0, 9.0}}};
     for (const cv::Point2d& shift : shifts) {
         const cv::Mat response = filter->respond(crop(scene, center - shift, size));
         const spectral::Peak peak = spectral::find_peak(response);
