@@ -30,7 +30,7 @@ struct TrackerConfig {
     int max_occluded_frames = 10;    ///< Occluded longer than this -> Lost.
     double search_growth = 0.15;     ///< Lost search radius growth per frame (window units).
     double max_search_radius = 1.5;  ///< Lost search radius cap (window units).
-    double search_spacing = 0.5;     ///< Lost search grid spacing (window units).
+    double search_spacing = 0.75;    ///< Lost search grid spacing (window units).
     double lost_velocity_damping = 0.9;
 };
 
