@@ -1,0 +1,26 @@
+# Doxygen configuration for the vision-target-tracker API reference.
+PROJECT_NAME           = "vision-target-tracker"
+PROJECT_NUMBER         = 1.0.0
+PROJECT_BRIEF          = "Real-time correlation-filter tracker with Kalman prediction and PID gimbal control"
+OUTPUT_DIRECTORY       = build/docs
+CREATE_SUBDIRS         = NO
+INPUT                  = include/vtt docs/api_mainpage.md
+FILE_PATTERNS          = *.hpp *.md
+RECURSIVE              = YES
+USE_MDFILE_AS_MAINPAGE = docs/api_mainpage.md
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+JAVADOC_AUTOBRIEF      = YES
+MARKDOWN_SUPPORT       = YES
+USE_MATHJAX            = YES
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_TREEVIEW      = YES
+HTML_COLORSTYLE        = LIGHT
+HAVE_DOT               = NO
+SOURCE_BROWSER         = YES
+STRIP_FROM_PATH        = include
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_AS_ERROR          = NO
