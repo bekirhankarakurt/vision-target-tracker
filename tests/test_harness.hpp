@@ -2,7 +2,7 @@
 #pragma once
 
 #include <cmath>
-#include <cstdio>
+#include <iostream>
 #include <string_view>
 #include <vector>
 
@@ -18,25 +18,23 @@ inline std::vector<TestCase>& registry() {
     return tests;
 }
 
-inline int& failure_count() {
-    static int failures = 0;
-    return failures;
-}
+/// Number of failed checks so far (mutated by the CHECK macros).
+inline int failures = 0;
 
 struct Registrar {
     Registrar(const char* name, void (*function)()) { registry().push_back({name, function}); }
 };
 
 inline void report_failure(const char* file, int line, const char* expression) {
-    ++failure_count();
-    std::fprintf(stderr, "  FAILED %s:%d: %s\n", file, line, expression);
+    ++failures;
+    std::cerr << "  FAILED " << file << ':' << line << ": " << expression << '\n';
 }
 
 inline void report_near(const char* file, int line, const char* expression, double a, double b,
                         double tolerance) {
-    ++failure_count();
-    std::fprintf(stderr, "  FAILED %s:%d: %s (%.6g vs %.6g, tol %.3g)\n", file, line, expression, a,
-                 b, tolerance);
+    ++failures;
+    std::cerr << "  FAILED " << file << ':' << line << ": " << expression << " (" << a << " vs " << b
+              << ", tol " << tolerance << ")\n";
 }
 
 /// Run all registered tests (or only those whose name contains argv[1]).
@@ -47,13 +45,13 @@ inline int run_all(int argc, char** argv) {
         if (!filter.empty() && std::string_view(test.name).find(filter) == std::string_view::npos) {
             continue;
         }
-        const int before = failure_count();
+        const int before = failures;
         test.function();
         ++executed;
-        std::printf("[%s] %s\n", failure_count() == before ? " OK " : "FAIL", test.name);
+        std::cout << (failures == before ? "[ OK ] " : "[FAIL] ") << test.name << '\n';
     }
-    std::printf("%d test(s), %d failure(s)\n", executed, failure_count());
-    return failure_count() == 0 && executed > 0 ? 0 : 1;
+    std::cout << executed << " test(s), " << failures << " failure(s)\n";
+    return failures == 0 && executed > 0 ? 0 : 1;
 }
 
 }  // namespace vtt::test
@@ -65,7 +63,8 @@ inline int run_all(int argc, char** argv) {
 
 #define CHECK(condition)                                                      \
     do {                                                                      \
-        if (!(condition)) {                                                   \
+        if (static_cast<bool>(condition)) {                                   \
+        } else {                                                              \
             ::vtt::test::report_failure(__FILE__, __LINE__, #condition);      \
         }                                                                     \
     } while (false)

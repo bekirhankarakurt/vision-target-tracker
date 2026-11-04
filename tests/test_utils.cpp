@@ -6,7 +6,7 @@
 #include "vtt/overlay.hpp"
 #include "vtt/types.hpp"
 
-#include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <string>
 
@@ -120,7 +120,7 @@ VTT_TEST(ground_truth_loads_and_csv_writes) {
         threw = true;
     }
     CHECK(threw);
-    std::remove(gt_path.c_str());
+    std::filesystem::remove(gt_path);
 
     const std::string csv_path = "vtt_test_out.csv";
     {
@@ -139,11 +139,11 @@ VTT_TEST(ground_truth_loads_and_csv_writes) {
     CHECK(header == CsvWriter::header());
     CHECK(row.find("TRACKING") != std::string::npos);
     CHECK(row.find(",1.000,0.000") != std::string::npos);
-    std::remove(csv_path.c_str());
+    std::filesystem::remove(csv_path);
 }
 
 VTT_TEST(overlay_draws_without_touching_size) {
-    cv::Mat canvas(480, 640, CV_8UC3, cv::Scalar::all(50));
+    const cv::Mat canvas(480, 640, CV_8UC3, cv::Scalar::all(50));
     GimbalSim gimbal(GimbalConfig{}, canvas.size());
     static_cast<void>(gimbal.step(cv::Point2d(400.0, 200.0), 0.1));
     for (const TrackState state :

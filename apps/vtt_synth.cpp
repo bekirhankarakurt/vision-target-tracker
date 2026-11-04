@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
                 }
                 config.frame_size = cv::Size(static_cast<int>(*w), static_cast<int>(*h));
             } else {
-                return fail("invalid option or value: " + flag + " " + value);
+                return fail("invalid option or value: " + flag);
             }
         }
         if (video_path.empty()) {

@@ -52,10 +52,10 @@ ScaleFilter::ScaleFilter(const ScaleFilterParams& params) : params_(params) {
     cv::Mat label(size, CV_32F);
     const double sigma = params_.output_sigma * std::sqrt(static_cast<double>(params_.num_scales));
     for (int i = 0; i < params_.num_scales; ++i) {
-        const double x = static_cast<double>(i);
-        const double n = static_cast<double>(params_.num_scales);
+        const auto x = static_cast<double>(i);
+        const auto n = static_cast<double>(params_.num_scales);
         hann.at<float>(0, i) = static_cast<float>(0.5 - 0.5 * std::cos(2.0 * CV_PI * (x + 1.0) / (n + 1.0)));
-        const double d = static_cast<double>(i - half);
+        const auto d = static_cast<double>(i - half);
         label.at<float>(0, i) = static_cast<float>(std::exp(-0.5 * d * d / (sigma * sigma)));
     }
     scale_window_ = hann;
@@ -65,8 +65,8 @@ ScaleFilter::ScaleFilter(const ScaleFilterParams& params) : params_(params) {
 cv::Mat ScaleFilter::samples(const cv::Mat& gray, const cv::Point2d& center,
                              const cv::Size2d& target_size) const {
     const int count = params_.num_scales;
-    const int dims = model_size_.area() * 3;
-    cv::Mat stacked(count, dims, CV_32F);
+    std::vector<cv::Mat> rows;
+    rows.reserve(static_cast<std::size_t>(count));
     for (int k = 0; k < count; ++k) {
         const double f = factors_[static_cast<std::size_t>(k)];
         const cv::Mat patch = sample_patch(gray, center,
@@ -77,13 +77,13 @@ cv::Mat ScaleFilter::samples(const cv::Mat& gray, const cv::Point2d& center,
         cv::Sobel(patch, gx, CV_32F, 1, 0, 3, 0.25, 0.0, cv::BORDER_REPLICATE);
         cv::Sobel(patch, gy, CV_32F, 0, 1, 3, 0.25, 0.0, cv::BORDER_REPLICATE);
         const cv::Mat intensity = patch - cv::mean(patch)[0];
-        const float weight = scale_window_.at<float>(0, k);
-        cv::Mat row = stacked.row(k);
-        const int n = model_size_.area();
-        intensity.reshape(1, 1).convertTo(row.colRange(0, n), CV_32F, static_cast<double>(weight));
-        gx.reshape(1, 1).convertTo(row.colRange(n, 2 * n), CV_32F, static_cast<double>(weight));
-        gy.reshape(1, 1).convertTo(row.colRange(2 * n, 3 * n), CV_32F, static_cast<double>(weight));
+        const std::vector<cv::Mat> parts{intensity.reshape(1, 1), gx.reshape(1, 1), gy.reshape(1, 1)};
+        cv::Mat row;
+        cv::hconcat(parts, row);
+        rows.emplace_back(row * static_cast<double>(scale_window_.at<float>(0, k)));
     }
+    cv::Mat stacked;
+    cv::vconcat(rows, stacked);
     return stacked.t();
 }
 
@@ -91,7 +91,7 @@ void ScaleFilter::train(const cv::Mat& spectrum, double rate) {
     cv::Mat labels;
     cv::repeat(label_spectrum_, spectrum.rows, 1, labels);
     const cv::Mat numerator = spectral::multiply(labels, spectrum, true);
-    cv::Mat power = spectral::multiply(spectrum, spectrum, true);
+    const cv::Mat power = spectral::multiply(spectrum, spectrum, true);
     cv::Mat denominator;
     cv::reduce(power, denominator, 0, cv::REDUCE_SUM, CV_32FC2);
     if (rate >= 1.0) {
@@ -126,9 +126,9 @@ double ScaleFilter::estimate(const cv::Mat& gray, const cv::Point2d& center,
     const cv::Mat response =
         spectral::ifft_real(spectral::divide(summed, denominator_, params_.regularization * mean_energy));
     const spectral::Peak peak = spectral::find_peak(response);
-    const double index = std::clamp(peak.location.x - static_cast<double>(params_.num_scales / 2),
-                                    -static_cast<double>(params_.num_scales / 2),
-                                    static_cast<double>(params_.num_scales / 2));
+    const int half = params_.num_scales / 2;
+    const auto limit = static_cast<double>(half);
+    const double index = std::clamp(peak.location.x - limit, -limit, limit);
     return std::pow(params_.scale_step, index);
 }
 
