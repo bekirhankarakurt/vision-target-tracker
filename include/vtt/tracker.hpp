@@ -29,8 +29,10 @@ struct TrackerConfig {
     double psr_reacquire = 7.5;      ///< Required PSR to leave Occluded/Lost.
     int max_occluded_frames = 10;    ///< Occluded longer than this -> Lost.
     double search_growth = 0.15;     ///< Lost search radius growth per frame (window units).
-    double max_search_radius = 1.5;  ///< Lost search radius cap (window units).
-    double search_spacing = 0.75;    ///< Lost search grid spacing (window units).
+    double max_search_radius = 2.5;  ///< Lost search radius cap (window units).
+    double search_spacing = 0.5;     ///< Lost search grid spacing (window units).
+    int lost_candidates_per_frame = 24;  ///< Search windows evaluated per LOST frame (sweep budget).
+    std::vector<double> lost_scale_factors{1.0, 0.8, 1.25};  ///< Scale hypotheses while LOST (only 1.0 without estimate_scale).
     double lost_velocity_damping = 0.9;
 };
 
@@ -65,6 +67,7 @@ public:
 private:
     struct Candidate {
         cv::Point2d center;
+        double scale = 1.0;
         double psr = 0.0;
         cv::Rect2d window;
     };
@@ -72,9 +75,15 @@ private:
     [[nodiscard]] cv::Size2d window_size(double scale) const;
     [[nodiscard]] cv::Mat extract(const cv::Mat& gray, const cv::Point2d& center, double scale,
                                   cv::Rect& used_window) const;
-    [[nodiscard]] Candidate evaluate(const cv::Mat& gray, const cv::Point2d& center) const;
+    struct SearchPoint {
+        cv::Point2d center;
+        double scale = 1.0;
+    };
+
+    [[nodiscard]] Candidate evaluate(const cv::Mat& gray, const cv::Point2d& center,
+                                     double scale) const;
     [[nodiscard]] cv::Size2d target_size() const;
-    [[nodiscard]] std::vector<cv::Point2d> search_centers(const cv::Point2d& predicted) const;
+    [[nodiscard]] std::vector<SearchPoint> search_points(const cv::Point2d& predicted) const;
     [[nodiscard]] cv::Point2d clamp_to_frame(const cv::Point2d& p) const;
 
     TrackerConfig config_;
