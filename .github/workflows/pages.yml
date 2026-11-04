@@ -1,0 +1,60 @@
+name: Docs & Coverage
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Coverage report + API docs
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libopencv-dev cmake ninja-build gcovr doxygen graphviz
+      - name: Build with coverage
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DVTT_ENABLE_COVERAGE=ON
+          cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j 4
+      - name: Coverage report
+        run: |
+          mkdir -p site/coverage
+          gcovr -r . --filter 'src/' --filter 'include/' --filter 'apps/' \
+            --html-details site/coverage/index.html --json-summary coverage.json \
+            --print-summary build | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 scripts/coverage_badge.py coverage.json site/coverage/badge.json
+      - name: API documentation
+        run: |
+          doxygen Doxyfile
+          cp -r build/docs/html site/api
+      - name: Landing page
+        run: cp docs/site/index.html site/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
