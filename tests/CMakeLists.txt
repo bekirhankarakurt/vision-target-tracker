@@ -38,3 +38,9 @@ if(VTT_BUILD_APPS)
   set_tests_properties(cli.rejects_missing_input PROPERTIES WILL_FAIL TRUE)
   add_test(NAME cli.synth_help COMMAND vtt_synth --help)
 endif()
+
+if(VTT_ENABLE_SANITIZERS)
+  get_property(vtt_all_tests DIRECTORY PROPERTY TESTS)
+  set_tests_properties(${vtt_all_tests} PROPERTIES
+    ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/lsan.supp:print_suppressions=0")
+endif()
