@@ -22,9 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libopencv-dev cmake ninja-build
+        timeout-minutes: 35
+        run: scripts/ci-install-deps.sh
       - name: Build
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVTT_WARNINGS_AS_ERRORS=ON

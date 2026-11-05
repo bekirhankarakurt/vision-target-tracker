@@ -19,9 +19,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libopencv-dev cmake ninja-build gcovr doxygen graphviz
+        timeout-minutes: 35
+        run: scripts/ci-install-deps.sh gcovr doxygen graphviz
       - name: Build with coverage
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DVTT_ENABLE_COVERAGE=ON
