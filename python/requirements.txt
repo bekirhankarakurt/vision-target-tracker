@@ -1,0 +1,5 @@
+ultralytics>=8.3
+opencv-python>=4.8
+numpy
+# Orbbec depth cameras only. Webcam and video-file input do not need this package.
+pyorbbecsdk2>=2.1

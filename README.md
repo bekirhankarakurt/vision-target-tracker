@@ -48,6 +48,19 @@ No camera? Generate the synthetic sequence and track it headless:
 ./build/vtt --input synthetic.avi --gt synthetic_gt.csv --headless
 ```
 
+## AI detection + depth (Python)
+
+Optional companion in [`python/`](python/README.md). It runs YOLO on an Orbbec depth camera, a webcam, or a video file and, when depth is available, shows the median distance inside each box. The C++ tracker is unchanged: this tool is not linked into `vtt` and it does not add an ML runtime to the C++ build.
+
+`pyorbbecsdk2` is only needed for Orbbec depth cameras. Webcam and file input need `ultralytics`, `opencv-python`, and `numpy`.
+
+```bash
+python -m pip install -r python/requirements.txt
+python python/vtt_detect.py --source webcam --classes bottle,person --track --csv detections.csv
+```
+
+If the Orbbec SDK is missing or no device is found, the default `--source orbbec` prints a warning and uses webcam 0. Distance is the median of the valid depth pixels in the central 40% of each box, in metres. The CLI, the CSV columns, and the unit tests are in [python/README.md](python/README.md).
+
 ## Requirements
 
 | Item | Version | Notes |
@@ -265,6 +278,7 @@ CI additionally runs the suite under ASan/UBSan, clang-tidy (`.clang-tidy`, warn
 ├── src/                     # implementations
 ├── tests/                   # CTest suites + minimal harness, LSan suppressions
 ├── scripts/                 # demo GIF rendering, coverage badge
+├── python/                  # optional YOLO detection + Orbbec depth companion
 ├── docs/                    # demo.gif, Doxygen main page, Pages landing page
 ├── cmake/CompilerOptions.cmake
 ├── .github/                 # CI, CodeQL, Pages, release workflows, templates, Dependabot

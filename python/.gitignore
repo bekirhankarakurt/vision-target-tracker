@@ -1,0 +1,10 @@
+# data, weights and run outputs stay local
+datasets/
+models/
+runs/
+Log/
+*.pt
+*.csv
+*.log
+__pycache__/
+.pytest_cache/

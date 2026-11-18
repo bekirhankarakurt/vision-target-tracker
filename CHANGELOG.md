@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Python companion `python/vtt_detect.py` for YOLO detection and optional Orbbec depth.
+  The on-screen distance is the median of valid depth pixels in the central 40% of each box.
+  `pyorbbecsdk2` is required only for Orbbec cameras. See `python/README.md`.
+- `python/vtt_custom.py`: captures sessions, labels them with SAM 2, builds leak-free splits and trains a YOLO segmentation model for a custom object.
+  Detections also draw segmentation masks.
+
 ## [1.0.0] - 2026-11-04
 
 ### Added
