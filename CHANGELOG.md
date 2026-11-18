@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `python/vtt_custom.py`: captures sessions, labels them with SAM 2, builds leak-free splits and trains a YOLO segmentation model for a custom object.
   Detections also draw segmentation masks.
 
+### Fixed
+
+- `unit.utils` crashed on Windows because it deleted a CSV file that was still open.
+
 ## [1.0.0] - 2026-11-04
 
 ### Added

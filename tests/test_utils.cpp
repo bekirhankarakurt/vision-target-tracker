@@ -139,6 +139,7 @@ VTT_TEST(ground_truth_loads_and_csv_writes) {
     CHECK(header == CsvWriter::header());
     CHECK(row.find("TRACKING") != std::string::npos);
     CHECK(row.find(",1.000,0.000") != std::string::npos);
+    in.close();  // Windows refuses to delete a file that is still open
     std::filesystem::remove(csv_path);
 }
 
