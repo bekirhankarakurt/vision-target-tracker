@@ -3,6 +3,7 @@
 #include "vtt/metrics.hpp"
 
 #include <cmath>
+#include <istream>
 #include <sstream>
 
 namespace vtt {
@@ -32,6 +33,25 @@ std::uint32_t get_u32(const std::vector<std::uint8_t>& in, std::size_t at) {
 
 std::uint16_t get_u16(const std::vector<std::uint8_t>& in, std::size_t at) {
     return static_cast<std::uint16_t>(in[at] | (in[at + 1] << 8U));
+}
+
+/// Optional trailing inference time. Absent is success with @p infer_ms left empty.
+/// A present value must be finite and >= 0, and it must be the last token.
+bool read_optional_infer_ms(std::istream& in, std::optional<double>& infer_ms) {
+    in >> std::ws;
+    if (in.eof() || in.peek() == std::istream::traits_type::eof()) {
+        return true;
+    }
+    double ms = 0.0;
+    if (!(in >> ms) || !std::isfinite(ms) || ms < 0.0) {
+        return false;
+    }
+    in >> std::ws;
+    if (!(in.eof() || in.peek() == std::istream::traits_type::eof())) {
+        return false;
+    }
+    infer_ms = ms;
+    return true;
 }
 
 }  // namespace
@@ -67,8 +87,10 @@ std::optional<Detection> parse_detection_line(const std::string& line) {
     Detection detection;
     detection.frame_id = frame;
     if (kind == "NONE") {
-        std::string rest;
-        return (in >> rest) ? std::nullopt : std::optional<Detection>(detection);
+        if (!read_optional_infer_ms(in, detection.infer_ms)) {
+            return std::nullopt;
+        }
+        return detection;
     }
     if (kind != "DET") {
         return std::nullopt;
@@ -78,11 +100,7 @@ std::optional<Detection> parse_detection_line(const std::string& line) {
     double w = 0.0;
     double h = 0.0;
     double conf = 0.0;
-    if (!(in >> x >> y >> w >> h >> conf)) {
-        return std::nullopt;
-    }
-    std::string rest;
-    if (in >> rest) {
+    if (!(in >> x >> y >> w >> h >> conf) || !read_optional_infer_ms(in, detection.infer_ms)) {
         return std::nullopt;
     }
     for (const double v : {x, y, w, h, conf}) {

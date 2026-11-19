@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `python/vtt_custom.py`: captures sessions, labels them with SAM 2, builds leak-free splits and trains a YOLO segmentation model for a custom object.
   Detections also draw segmentation masks.
 - Detect + track: `--detector HOST:PORT` streams frames over UDP to `python/vtt_detector_server.py` (YOLO), whose boxes correct the correlation tracker. `DetectionFusion` auto-locks (`--auto-lock`), re-anchors a drifted target after two disagreeing detections, refines small drift at once with motion compensation for the reply delay, and never overrides a target the detector has not confirmed. Options `--detector-listen`, `--detect-every`, `--det-conf`. Launcher `python/run_detect_track.ps1`.
+- Detector round trip: `vtt` keeps the send time of the last 120 frames and shows `rtt NN ms` on the DET status line. The exit summary prints `detector rtt ms` mean/p50/p95 with reply, refine, and re-anchor counts. `capture.read()` is reported as `capture ms` mean/p95.
+- Optional inference time on detector replies: `DET <id> <x> <y> <w> <h> <conf> <infer_ms>` and `NONE <id> <infer_ms>`. Negative or non-finite values are rejected. Older 7-field and 2-field lines still parse. The status line shows `yolo NN ms`.
+- Live cameras request a one-frame capture buffer (`CAP_PROP_BUFFERSIZE` 1). `--cam-width` and `--cam-height` (`0` = driver default) and `--cam-fps` request a mode; `vtt` prints the size and fps the driver delivered.
+- `vtt_detector_server.py`: `--half` / `--no-half` (FP16 on CUDA, default on when CUDA is available), a warm-up inference before `detector ready`, `infer_ms` on each reply, and the same `YOLO()` load for `.pt`, `.onnx`, and `.engine`.
 
 ### Changed
 

@@ -1,6 +1,6 @@
 # AI detection + depth
 
-Optional Python companion for [vision-target-tracker](../README.md). It runs a YOLO model on a colour frame, draws each box, and, when an Orbbec depth camera is connected, prints the distance in metres. The C++ correlation tracker is unchanged and does not call this program.
+Optional Python companion for [vision-target-tracker](../README.md). It runs a YOLO model on a colour frame, draws each box, and, when an Orbbec depth camera is connected, prints the distance in metres. `vtt_detector_server.py` is the separate YOLO process for detect + track: `vtt` sends it frames over UDP and applies the boxes it sends back. The C++ build stays free of a Python dependency.
 
 Python 3.10 or newer. The same script runs on Windows and on a Raspberry Pi 5 (Linux aarch64). Ultralytics uses the CPU when CUDA is not present.
 
@@ -97,11 +97,50 @@ What made the difference in practice:
 
 Datasets, weights and run outputs are git-ignored.
 
+## Detect + track server
+
+`vtt_detector_server.py` is the YOLO process for the C++ tracker's detect + track mode. `vtt` keeps the camera and the correlation tracker, sends JPEG frames over UDP, and uses the reply to refine or re-anchor the track. See the [Detect + track](../README.md#detect--track-yolo-corrects-the-tracker) section in the top-level README.
+
+```text
+python python/vtt_detector_server.py [options]
+  --model PATH          .pt, .onnx, or TensorRT .engine (models/deodorant_seg2.pt)
+  --listen N            UDP port for frames from vtt (5601)
+  --reply-host HOST     Where to send replies (127.0.0.1)
+  --reply-port N        Reply port (5602)
+  --conf 0.35           YOLO confidence threshold
+  --device auto|cpu|N   Inference device (auto)
+  --imgsz N             Inference size (640)
+  --half / --no-half    FP16 on CUDA. Default: on when CUDA is available
+```
+
+Before it prints `detector ready`, the server runs one inference on a blank image so the first live frames skip CUDA setup.
+
+A frame datagram is `VTF1`, a uint32 frame id, uint16 width, uint16 height (little endian), then a JPEG. The reply is `DET <id> <x> <y> <w> <h> <conf> <infer_ms>` or `NONE <id> <infer_ms>`. The box is in the original frame's pixels. `infer_ms` is this frame's inference time in milliseconds. While YOLO is busy the server keeps only the newest datagram.
+
+Optional TensorRT speed-up. Export locally; the server loads the engine with the same `--model` path:
+
+```bash
+yolo export model=models/deodorant_seg2.pt format=engine half=True
+python vtt_detector_server.py --model models/deodorant_seg2.engine
+```
+
+`run_detect_track.ps1` starts the server in its own window, waits for the model to load, then runs `vtt.exe` with `--detector 127.0.0.1:5601 --auto-lock`.
+
+```powershell
+.\run_detect_track.ps1 -Camera 2 -Model models\deodorant_seg2.pt -Vtt C:\b\vtt\Release\vtt.exe
+```
+
+The server tests cover the datagram header, box scaling, reply lines with and without `infer_ms`, and the FP16 choice. They do not load a model.
+
+```bash
+python -m pytest python/test_vtt_detector_server.py
+```
+
 ## Tests
 
-The tests cover the distance helper, class-name parsing, labels, and CSV rows. They do not open a camera and they do not download a model.
+The tests cover the distance helper, class-name parsing, labels, CSV rows, and the detect + track server. They do not open a camera and they do not download a model.
 
 ```bash
 python -m pip install pytest
-python -m pytest python/test_vtt_detect.py
+python -m pytest python/test_vtt_detect.py python/test_vtt_detector_server.py
 ```

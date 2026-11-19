@@ -5,10 +5,12 @@ runs YOLO on it and replies with the best box, which the tracker uses to stop
 drifting onto the background.
 
     frame  vtt -> here   : b"VTF1" + uint32 frame_id + uint16 width + uint16 height + JPEG  (little endian)
-    reply  here -> vtt   : "DET <frame> <x> <y> <w> <h> <conf>\\n"  or  "NONE <frame>\\n"
-                           box in ORIGINAL frame pixels
+    reply  here -> vtt   : "DET <frame> <x> <y> <w> <h> <conf> <infer_ms>\\n"
+                           or "NONE <frame> <infer_ms>\\n"
+                           box in ORIGINAL frame pixels; infer_ms is this frame's inference time
 
 Run:  python vtt_detector_server.py --model models/deodorant_seg2.pt
+      .pt, .onnx, and TensorRT .engine all load through ultralytics.
 """
 
 from __future__ import annotations
@@ -56,11 +58,27 @@ def scale_box(
     return x * sx, y * sy, w * sx, h * sy
 
 
-def format_reply(frame_id: int, box: tuple[float, float, float, float] | None, conf: float = 0.0) -> bytes:
+def format_reply(
+    frame_id: int,
+    box: tuple[float, float, float, float] | None,
+    conf: float = 0.0,
+    infer_ms: float | None = None,
+) -> bytes:
+    """DET/NONE line. `infer_ms` is appended when the caller measured an inference."""
+    suffix = "" if infer_ms is None else f" {infer_ms:.1f}"
     if box is None:
-        return f"NONE {frame_id}\n".encode("ascii")
+        return f"NONE {frame_id}{suffix}\n".encode("ascii")
     x, y, w, h = box
-    return f"DET {frame_id} {x:.1f} {y:.1f} {w:.1f} {h:.1f} {conf:.3f}\n".encode("ascii")
+    return f"DET {frame_id} {x:.1f} {y:.1f} {w:.1f} {h:.1f} {conf:.3f}{suffix}\n".encode("ascii")
+
+
+def resolve_half(requested: bool | None, cuda: bool) -> bool:
+    """FP16 when requested, or when the choice is left unset and CUDA is in use."""
+    if not cuda:
+        return False
+    if requested is None:
+        return True
+    return requested
 
 
 def best_box(result: Any, allowed: set[int] | None) -> tuple[tuple[float, float, float, float], float] | None:
@@ -102,13 +120,19 @@ def newest_datagram(sock: socket.socket, first: bytes) -> tuple[bytes, int]:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--model", default="models/deodorant_seg2.pt")
+    p.add_argument("--model", default="models/deodorant_seg2.pt", help=".pt, .onnx, or TensorRT .engine")
     p.add_argument("--listen", type=int, default=5601, help="UDP port for frames from vtt")
     p.add_argument("--reply-host", default="127.0.0.1")
     p.add_argument("--reply-port", type=int, default=5602)
     p.add_argument("--conf", type=float, default=0.35)
     p.add_argument("--device", default="auto", help="auto, cpu or a CUDA index like 0")
     p.add_argument("--imgsz", type=int, default=640)
+    p.add_argument(
+        "--half",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="FP16 on CUDA (default: on when CUDA is available; --no-half to disable)",
+    )
     return p
 
 
@@ -118,15 +142,28 @@ def main(argv: list[str] | None = None) -> int:
     import numpy as np
     from ultralytics import YOLO
 
+    import torch
+
     device: Any = None if args.device == "auto" else args.device
+    cuda = args.device != "cpu" and bool(torch.cuda.is_available())
+    half = resolve_half(args.half, cuda)
+    if args.half is True and not half:
+        print("warning: --half needs CUDA; running FP32", file=sys.stderr, flush=True)
+    # .pt, .onnx and TensorRT .engine all load through ultralytics.YOLO.
     model = YOLO(args.model)
+    blank = np.zeros((args.imgsz, args.imgsz, 3), dtype=np.uint8)
+    model.predict(blank, conf=args.conf, imgsz=args.imgsz, device=device, half=half, verbose=False)
     rx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     rx.bind(("127.0.0.1", args.listen))
     rx.settimeout(0.5)
     tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    print(f"detector ready: {args.model} on udp {args.listen} -> {args.reply_host}:{args.reply_port}", flush=True)
+    print(
+        f"detector ready: {args.model} on udp {args.listen} -> {args.reply_host}:{args.reply_port}"
+        f"  half={str(half).lower()}",
+        flush=True,
+    )
 
-    frames, dropped, infer_ms, last_print = 0, 0, 0.0, time.monotonic()
+    frames, dropped, infer_total, last_print = 0, 0, 0.0, time.monotonic()
     try:
         while True:
             try:
@@ -143,21 +180,24 @@ def main(argv: list[str] | None = None) -> int:
             if image is None:
                 continue
             t0 = time.perf_counter()
-            result = model.predict(image, conf=args.conf, imgsz=args.imgsz, device=device, verbose=False)[0]
-            infer_ms += (time.perf_counter() - t0) * 1000.0
+            result = model.predict(
+                image, conf=args.conf, imgsz=args.imgsz, device=device, half=half, verbose=False
+            )[0]
+            this_ms = (time.perf_counter() - t0) * 1000.0
+            infer_total += this_ms
             found = best_box(result, None)
             if found is None:
-                reply = format_reply(header.frame_id, None)
+                reply = format_reply(header.frame_id, None, infer_ms=this_ms)
             else:
                 box = scale_box(found[0], (image.shape[1], image.shape[0]), (header.width, header.height))
-                reply = format_reply(header.frame_id, box, found[1])
+                reply = format_reply(header.frame_id, box, found[1], this_ms)
             tx.sendto(reply, (args.reply_host, args.reply_port))
             frames += 1
             now = time.monotonic()
             if now - last_print >= 1.0:
-                print(f"{frames / (now - last_print):5.1f} frames/s  inference {infer_ms / max(frames, 1):5.1f} ms  "
+                print(f"{frames / (now - last_print):5.1f} frames/s  inference {infer_total / max(frames, 1):5.1f} ms  "
                       f"skipped {dropped}  last: {reply.decode().strip()}", flush=True)
-                frames, dropped, infer_ms, last_print = 0, 0, 0.0, now
+                frames, dropped, infer_total, last_print = 0, 0, 0.0, now
     except KeyboardInterrupt:
         pass
     finally:

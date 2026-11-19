@@ -68,7 +68,7 @@ A correlation filter only knows the pixels inside the first box. On a hand-held 
 ```
 camera -> vtt (tracker, GUI) --UDP JPEG frames--> python/vtt_detector_server.py (YOLO)
               ^                                              |
-              +--------------- "DET id x y w h conf" --------+
+              +------- "DET id x y w h conf [infer_ms]" -----+
 ```
 
 `DetectionFusion` (`src/fusion.cpp`, unit-tested) decides what a detection does:
@@ -83,12 +83,35 @@ camera -> vtt (tracker, GUI) --UDP JPEG frames--> python/vtt_detector_server.py 
 
 Detections are compared with the tracker box of the frame they were computed on, not the current one. The server drops frames that queued up while YOLO was busy, so it always answers the newest frame.
 
-Protocol: frame datagram = `"VTF1"`, uint32 frame id, uint16 width, uint16 height (little endian) + JPEG at most 640 px wide. Reply = `DET <id> <x> <y> <w> <h> <conf>` in original pixels, or `NONE <id>`.
+Protocol: frame datagram = `"VTF1"`, uint32 frame id, uint16 width, uint16 height (little endian) + JPEG at most 640 px wide. Reply = `DET <id> <x> <y> <w> <h> <conf> [<infer_ms>]` in original pixels, or `NONE <id> [<infer_ms>]`. `infer_ms` is the detector's inference time in milliseconds. Lines without that field still parse.
 
 ```bash
 python python/vtt_detector_server.py --model python/models/deodorant_seg2.pt
 ./build/vtt --camera 0 --detector 127.0.0.1:5601 --auto-lock
 ```
+
+Optional TensorRT speed-up (export on your machine; the server loads a `.engine` or `.onnx` the same way as a `.pt`):
+
+```bash
+yolo export model=models/deodorant_seg2.pt format=engine half=True
+```
+
+### Latency
+
+The live `DET` line shows `rtt NN ms` and `yolo NN ms`. `rtt` is the time from the start of JPEG encode for that frame id until the matching reply (the last 120 sends are remembered). `yolo` is `infer_ms` from the reply. At exit, every run prints capture time, and a run with `--detector` also prints:
+
+```text
+capture ms  mean …  p95 …
+detector rtt ms  mean …  p50 …  p95 …, replies N, refines N, re-anchors N
+```
+
+| Stage | What it costs | Where to read it |
+|---|---|---|
+| Capture | `capture.read()`. A live camera sets the driver buffer to one frame so a slow loop does not queue stale images. `--cam-width`, `--cam-height` (`0` = driver default) and `--cam-fps` request a mode; the startup line is the size and fps the driver actually delivered. | `capture ms` mean/p95. A mean near the frame period means the camera is pacing the loop. |
+| JPEG + UDP | Resize to at most 640 px wide, JPEG-encode, send. | Inside `rtt`, ahead of `yolo`. |
+| YOLO | Inference. `--half` is FP16 on CUDA (default on when CUDA is available; `--no-half` disables it). The server warms up on a blank image before it prints `detector ready`. `--imgsz` sets the inference size. | `yolo NN ms` |
+| Reply | UDP reply matched to the frame id. | `rtt` (JPEG + network + YOLO + scheduling). The gap `rtt − yolo` is everything except inference. |
+| Fusion | Refine or re-anchor on the tracker thread after the reply is parsed. | `refines` and `re-anchors` in the status line and the exit summary. |
 
 ## Requirements
 
@@ -117,23 +140,28 @@ python python/vtt_detector_server.py --model python/models/deodorant_seg2.pt
 ```text
 vtt [options]
   -i, --input PATH          Video file (default: webcam)       --camera N        Webcam index (0)
+      --cam-width N         Capture width (0 = default)        --cam-height N    Capture height (0 = default)
+      --cam-fps X           Capture frame rate                 --max-frames N    Stop after N frames
       --algo mosse|kcf      Correlation filter (kcf)           --roi x,y,w,h     Initial box (omit in the GUI to pick live)
       --click-box N         Click-lock square side (80 px)     --no-scale        Disable scale estimation
       --psr-threshold X     Override tracking PSR gate
+      --detector HOST:PORT  YOLO detect + track (UDP)          --detector-listen N   Reply port (5602)
+      --detect-every N      Send every Nth frame (1..30)       --det-conf X      Min detection confidence (0.5)
+      --auto-lock           Lock from detections when idle
       --hfov DEG            Scene camera FOV (60)              --max-rate DPS    Gimbal rate limit (120)
       --pid-kp/-ki/-kd X    PID gains (10 / 20 / 0.1)          --max-accel DPS2  Gimbal accel limit (600)
       --headless            No window (needs --roi or --gt)    --csv PATH        Per-frame telemetry CSV
-      --output PATH         Overlay video (MJPG .avi)          --max-frames N    Stop after N frames
+      --output PATH         Overlay video (MJPG .avi)
       --gt PATH             Ground truth CSV (frame,x,y,w,h)   --min-iou X / --max-center-error PX  exit 2 if violated
 ```
 
-Run `./build/vtt --help` for the full text. At exit `vtt` prints latency (mean/p50/p95/max), throughput and, with `--gt`, mean IoU, centre error, success rate and precision.
+Run `./build/vtt --help` for the full text. At exit `vtt` prints tracker latency (mean/p50/p95/max), throughput, capture time (mean/p95) and, with `--gt`, mean IoU, centre error, success rate and precision. With `--detector` it also prints detector round-trip mean/p50/p95, reply count, refines and re-anchors. See [Latency](#latency).
 
 ### Controls
 
 The GUI window shows the live camera immediately. With no target the tracker stays `IDLE` and the gimbal receives no aim. Drag a rectangle on the video and release to lock it when the box is at least 8×8 px, or click to lock a `--click-box` square (default 80 px, range 16..400) centred on the click. Right-click or `x` releases the target. A drag or click while tracking switches to the new target. `--roi` and `--gt` still lock on the first frame, in the GUI and in `--headless`.
 
-The gimbal inset is painted on the camera frame at the same image size, so mouse positions map directly to frame pixels. Presses outside the frame are ignored.
+The gimbal inset is painted on the camera frame at the same image size, so mouse positions map directly to frame pixels. Presses outside the frame are ignored. With `--detector`, the bottom status line shows the reply rate, `rtt NN ms`, `yolo NN ms`, refine and re-anchor counts, and `[backed]` once the detector has confirmed the lock.
 
 | Input | Action |
 |---|---|
@@ -318,7 +346,7 @@ CI additionally runs the suite under ASan/UBSan, clang-tidy (`.clang-tidy`, warn
 ├── src/                     # implementations
 ├── tests/                   # CTest suites + minimal harness, LSan suppressions
 ├── scripts/                 # demo GIF rendering, coverage badge
-├── python/                  # optional YOLO detection + Orbbec depth companion
+├── python/                  # optional YOLO detection, depth, and the detect + track server
 ├── docs/                    # demo.gif, Doxygen main page, Pages landing page
 ├── cmake/CompilerOptions.cmake
 ├── .github/                 # CI, CodeQL, Pages, release workflows, templates, Dependabot
@@ -332,6 +360,9 @@ CI additionally runs the suite under ASan/UBSan, clang-tidy (`.clang-tidy`, warn
 - [x] Scale estimation, PSR confidence, Kalman coasting, lost/reacquire
 - [x] PID gimbal simulation with anti-windup and rate limits
 - [x] Synthetic ground-truth sequence and accuracy-gated CI
+- [x] Detect + track: YOLO over UDP corrects the correlation tracker
+- [ ] Gimbal hardware via ESP32
+- [ ] Mask-centroid aiming
 - [ ] Closed-loop gimbal: crop the scene by the boresight so control affects the image
 - [ ] Interacting Multiple Model (CV + CA) filter for manoeuvring targets
 - [ ] Thermal (16-bit) input path and contrast normalisation for IR sensors

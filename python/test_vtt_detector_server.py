@@ -39,6 +39,26 @@ def test_scale_box_back_to_original():
 def test_reply_lines():
     assert server.format_reply(7, None) == b"NONE 7\n"
     assert server.format_reply(42, (10.0, 20.5, 30.0, 40.0), 0.8766) == b"DET 42 10.0 20.5 30.0 40.0 0.877\n"
+    assert server.format_reply(7, None, infer_ms=4.26) == b"NONE 7 4.3\n"
+    assert server.format_reply(42, (10.0, 20.5, 30.0, 40.0), 0.8766, 12.34) == (
+        b"DET 42 10.0 20.5 30.0 40.0 0.877 12.3\n"
+    )
+
+
+def test_resolve_half():
+    assert server.resolve_half(None, True) is True
+    assert server.resolve_half(None, False) is False
+    assert server.resolve_half(True, True) is True
+    assert server.resolve_half(False, True) is False
+    assert server.resolve_half(True, False) is False
+
+
+def test_half_and_imgsz_flags():
+    parser = server.build_parser()
+    assert parser.parse_args([]).half is None
+    assert parser.parse_args([]).imgsz == 640
+    assert parser.parse_args(["--half"]).half is True
+    assert parser.parse_args(["--no-half"]).half is False
 
 
 def _result(xyxy, conf, cls):

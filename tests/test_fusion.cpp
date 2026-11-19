@@ -57,8 +57,25 @@ VTT_TEST(detection_lines_parse_and_reject) {
     const auto d = parse_detection_line("DET 42 10.5 20 30 40 0.87\n");
     CHECK(d && d->frame_id == 42 && d->box && d->box->x == 10.5 && d->box->height == 40.0);
     CHECK(d && d->confidence > 0.86 && d->confidence < 0.88);
+    CHECK(d && !d->infer_ms);
     const auto none = parse_detection_line("NONE 7\n");
-    CHECK(none && none->frame_id == 7 && !none->box);
+    CHECK(none && none->frame_id == 7 && !none->box && !none->infer_ms);
+
+    const auto timed = parse_detection_line("DET 42 10.5 20 30 40 0.87 12.5\n");
+    CHECK(timed && timed->frame_id == 42 && timed->box && timed->infer_ms);
+    if (timed && timed->infer_ms) {
+        CHECK_NEAR(*timed->infer_ms, 12.5, 1e-9);
+    }
+    const auto none_ms = parse_detection_line("NONE 7 3.5");
+    CHECK(none_ms && none_ms->frame_id == 7 && !none_ms->box && none_ms->infer_ms);
+    if (none_ms && none_ms->infer_ms) {
+        CHECK_NEAR(*none_ms->infer_ms, 3.5, 1e-9);
+    }
+    const auto zero_ms = parse_detection_line("NONE 4 0\n");
+    CHECK(zero_ms && zero_ms->infer_ms);
+    if (zero_ms && zero_ms->infer_ms) {
+        CHECK_NEAR(*zero_ms->infer_ms, 0.0, 1e-12);
+    }
 
     CHECK(!parse_detection_line(""));
     CHECK(!parse_detection_line("DET 1 2 3 4"));
@@ -67,7 +84,15 @@ VTT_TEST(detection_lines_parse_and_reject) {
     CHECK(!parse_detection_line("DET 1 nan 3 4 5 0.5"));
     CHECK(!parse_detection_line("DET -1 2 3 4 5 0.5"));
     CHECK(!parse_detection_line("DET 1 2 3 4 5 0.5 extra"));
+    CHECK(!parse_detection_line("DET 1 2 3 4 5 0.5 -1"));
+    CHECK(!parse_detection_line("DET 1 2 3 4 5 0.5 -0.01"));
+    CHECK(!parse_detection_line("DET 1 2 3 4 5 0.5 nan"));
+    CHECK(!parse_detection_line("DET 1 2 3 4 5 0.5 inf"));
+    CHECK(!parse_detection_line("DET 1 2 3 4 5 0.5 8 9"));
     CHECK(!parse_detection_line("NONE 3 extra"));
+    CHECK(!parse_detection_line("NONE 3 -4"));
+    CHECK(!parse_detection_line("NONE 3 nan"));
+    CHECK(!parse_detection_line("NONE 3 1.5 extra"));
     CHECK(!parse_detection_line("HELLO 3"));
 }
 

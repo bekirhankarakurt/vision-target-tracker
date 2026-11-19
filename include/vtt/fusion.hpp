@@ -35,9 +35,12 @@ struct Detection {
     long frame_id = 0;
     std::optional<cv::Rect2d> box;  ///< Original-frame pixels.
     double confidence = 0.0;
+    /// Detector inference time in milliseconds, when the reply includes it.
+    std::optional<double> infer_ms;
 };
 
-/// Parse "DET <frame> <x> <y> <w> <h> <conf>" or "NONE <frame>" (trailing newline allowed).
+/// Parse "DET <frame> <x> <y> <w> <h> <conf> [<infer_ms>]" or "NONE <frame> [<infer_ms>]".
+/// The inference-time field is optional so older replies still parse. Trailing newline allowed.
 [[nodiscard]] std::optional<Detection> parse_detection_line(const std::string& line);
 
 struct FusionConfig {

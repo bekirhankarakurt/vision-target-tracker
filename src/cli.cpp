@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <sstream>
 
@@ -36,11 +37,12 @@ std::optional<long> to_long(const std::string& text) {
 }
 
 bool takes_value(const std::string& flag) {
-    static const std::array<const char*, 23> flags{
+    static const std::array<const char*, 26> flags{
         "--input", "-i", "--camera", "--algo", "--roi", "--gt", "--csv", "--output",
         "--max-frames", "--psr-threshold", "--hfov", "--pid-kp", "--pid-ki", "--pid-kd",
         "--max-rate", "--max-accel", "--min-iou", "--max-center-error", "--click-box",
-        "--detector", "--detector-listen", "--detect-every", "--det-conf"};
+        "--detector", "--detector-listen", "--detect-every", "--det-conf",
+        "--cam-width", "--cam-height", "--cam-fps"};
     return std::any_of(flags.begin(), flags.end(), [&flag](const char* f) { return flag == f; });
 }
 
@@ -111,6 +113,21 @@ ParseResult parse_arguments(const std::vector<std::string>& args) {
                 return fail("invalid camera index: " + value);
             }
             o.camera_index = static_cast<int>(*index);
+        } else if (flag == "--cam-width" || flag == "--cam-height") {
+            const auto size = to_long(value);
+            if (!size || *size < 0 || *size > 8192) {
+                return fail("invalid " + flag + ": " + value + " (expected 0..8192, 0 = driver default)");
+            }
+            int AppOptions::*field = &AppOptions::cam_height;
+            if (flag == "--cam-width") {
+                field = &AppOptions::cam_width;
+            }
+            o.*field = static_cast<int>(*size);
+        } else if (flag == "--cam-fps") {
+            if (!number() || !std::isfinite(*number()) || *number() <= 0.0 || *number() > 1000.0) {
+                return fail("invalid camera fps: " + value + " (expected 0 < fps <= 1000)");
+            }
+            o.cam_fps = *number();
         } else if (flag == "--algo") {
             const auto algorithm = parse_algorithm(value);
             if (!algorithm) {
@@ -224,6 +241,9 @@ std::string usage() {
 Input
   -i, --input PATH          Video file (default: webcam)
       --camera N            Webcam index (default: 0)
+      --cam-width N         Requested capture width (0 = driver default, max 8192)
+      --cam-height N        Requested capture height (0 = driver default, max 8192)
+      --cam-fps X           Requested capture frame rate (max 1000)
       --max-frames N        Stop after N frames (0 = all)
 
 Tracker

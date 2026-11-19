@@ -16,6 +16,9 @@ namespace vtt {
 struct AppOptions {
     std::optional<std::string> input;   ///< Video file; camera when empty.
     int camera_index = 0;
+    int cam_width = 0;                  ///< Requested capture width; 0 keeps the driver default.
+    int cam_height = 0;                 ///< Requested capture height; 0 keeps the driver default.
+    double cam_fps = 0.0;               ///< Requested capture FPS; 0 keeps the driver default.
     Algorithm algorithm = Algorithm::Kcf;
     std::optional<cv::Rect2d> roi;
     std::optional<std::string> ground_truth;

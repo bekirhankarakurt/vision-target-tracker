@@ -20,6 +20,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <deque>
 #include <exception>
 #include <iomanip>
 #include <iostream>
@@ -40,6 +41,7 @@ const cv::Scalar kDetection(255, 255, 0);
 constexpr int kDetectorMaxWidth = 640;
 constexpr std::size_t kMaxDatagram = 60000;
 constexpr long kShowDetectionFrames = 10;
+constexpr std::size_t kSendStampCap = 120;
 
 /// JPEG-encode @p frame (at most 640 px wide) behind a VTF1 header and send it.
 bool send_frame(vtt::UdpSocket& socket, const vtt::Endpoint& to, const cv::Mat& frame, long frame_id) {
@@ -71,6 +73,23 @@ bool send_frame(vtt::UdpSocket& socket, const vtt::Endpoint& to, const cv::Mat& 
 
 double elapsed_ms(Clock::time_point start, Clock::time_point end) {
     return std::chrono::duration<double, std::milli>(end - start).count();
+}
+
+struct FrameStamp {
+    long frame_id = 0;
+    Clock::time_point sent{};
+};
+
+/// Round trip for a frame whose send time is still in the bounded stamp list.
+[[nodiscard]] std::optional<double> round_trip_ms(const std::deque<FrameStamp>& stamps, long frame_id,
+                                                  Clock::time_point now) {
+    const auto found = std::find_if(stamps.rbegin(), stamps.rend(), [frame_id](const FrameStamp& stamp) {
+        return stamp.frame_id == frame_id;
+    });
+    if (found == stamps.rend()) {
+        return std::nullopt;
+    }
+    return elapsed_ms(found->sent, now);
 }
 
 vtt::TrackerConfig make_config(const vtt::AppOptions& options, vtt::Algorithm algorithm) {
@@ -175,10 +194,34 @@ int run(const vtt::AppOptions& options) {
         std::cerr << "error: cannot open " << (options.input ? *options.input : "camera") << '\n';
         return 1;
     }
+    if (!options.input) {
+        // One-frame buffer: a slow loop must not sit on a queue of stale images.
+        static_cast<void>(capture.set(cv::CAP_PROP_BUFFERSIZE, 1.0));
+        if (options.cam_width > 0) {
+            static_cast<void>(capture.set(cv::CAP_PROP_FRAME_WIDTH, static_cast<double>(options.cam_width)));
+        }
+        if (options.cam_height > 0) {
+            static_cast<void>(capture.set(cv::CAP_PROP_FRAME_HEIGHT, static_cast<double>(options.cam_height)));
+        }
+        if (options.cam_fps > 0.0) {
+            static_cast<void>(capture.set(cv::CAP_PROP_FPS, options.cam_fps));
+        }
+    }
     cv::Mat frame;
-    if (!capture.read(frame) || frame.empty()) {
+    vtt::LatencyStats capture_ms;
+    const auto read_frame = [&]() {
+        const Clock::time_point started = Clock::now();
+        const bool got = capture.read(frame);
+        capture_ms.add(elapsed_ms(started, Clock::now()));
+        return got && !frame.empty();
+    };
+    if (!read_frame()) {
         std::cerr << "error: no frames in input\n";
         return 1;
+    }
+    if (!options.input) {
+        std::cout << cv::format("camera %dx%d @ %.1f fps\n", frame.cols, frame.rows,
+                                capture.get(cv::CAP_PROP_FPS));
     }
 
     std::vector<std::optional<cv::Rect2d>> truth;
@@ -271,9 +314,14 @@ int run(const vtt::AppOptions& options) {
     std::optional<vtt::Detection> last_detection;
     long reanchors = 0;
     long refines = 0;
+    long replies = 0;
     long detections_in_window = 0;
     double detection_rate = 0.0;
     Clock::time_point detection_window = Clock::now();
+    vtt::LatencyStats detector_rtt;
+    std::deque<FrameStamp> send_stamps;
+    std::optional<double> last_rtt_ms;
+    std::optional<double> last_infer_ms;
 
     long index = 0;
     const Clock::time_point run_start = Clock::now();
@@ -352,9 +400,17 @@ int run(const vtt::AppOptions& options) {
                 cv::putText(canvas, label, cv::Point(cvRound(b.x), std::max(12, cvRound(b.y) - 4)),
                             cv::FONT_HERSHEY_SIMPLEX, 0.5, kDetection, 1, cv::LINE_AA);
             }
-            const std::string status =
-                cv::format("DET on  %.1f/s  refine %ld  re-anchor %ld%s", detection_rate, refines, reanchors,
-                           fusion.detector_backed() ? "  [backed]" : "");
+            std::string rtt_text = "rtt -- ms";
+            if (last_rtt_ms) {
+                rtt_text = cv::format("rtt %.0f ms", *last_rtt_ms);
+            }
+            std::string yolo_text = "yolo -- ms";
+            if (last_infer_ms) {
+                yolo_text = cv::format("yolo %.0f ms", *last_infer_ms);
+            }
+            const std::string status = cv::format(
+                "DET on  %.1f/s  %s  %s  refine %ld  re-anchor %ld%s", detection_rate, rtt_text.c_str(),
+                yolo_text.c_str(), refines, reanchors, fusion.detector_backed() ? "  [backed]" : "");
             cv::putText(canvas, status, cv::Point(10, canvas.rows - 12), cv::FONT_HERSHEY_SIMPLEX, 0.55,
                         cv::Scalar(0, 0, 0), 3, cv::LINE_AA);
             cv::putText(canvas, status, cv::Point(10, canvas.rows - 12), cv::FONT_HERSHEY_SIMPLEX, 0.55,
@@ -374,15 +430,30 @@ int run(const vtt::AppOptions& options) {
         if (detector_tx && detector_rx && detector_at) {
             fusion.record(index, target_locked ? track.state : vtt::TrackState::Idle, track.box);
             if (index % options.detect_every == 0) {
-                static_cast<void>(send_frame(*detector_tx, *detector_at, frame, index));
+                const Clock::time_point sent_at = Clock::now();
+                if (send_frame(*detector_tx, *detector_at, frame, index)) {
+                    send_stamps.push_back(FrameStamp{index, sent_at});
+                    while (send_stamps.size() > kSendStampCap) {
+                        send_stamps.pop_front();
+                    }
+                }
             }
             while (const auto bytes = detector_rx->try_receive()) {
                 const auto detection = vtt::parse_detection_line(std::string(bytes->begin(), bytes->end()));
                 if (!detection) {
                     continue;
                 }
+                ++replies;
                 ++detections_in_window;
                 last_detection = *detection;
+                if (detection->infer_ms) {
+                    last_infer_ms = detection->infer_ms;
+                }
+                if (const std::optional<double> rtt =
+                        round_trip_ms(send_stamps, detection->frame_id, Clock::now())) {
+                    detector_rtt.add(*rtt);
+                    last_rtt_ms = rtt;
+                }
                 const vtt::FusionDecision decision = fusion.on_detection(*detection, index);
                 if (decision.action != vtt::FusionAction::None) {
                     lock_target(decision.box, true);
@@ -449,7 +520,7 @@ int run(const vtt::AppOptions& options) {
         if (options.max_frames > 0 && index >= options.max_frames) {
             break;
         }
-        if (!quit && (!capture.read(frame) || frame.empty())) {
+        if (!quit && !read_frame()) {
             break;
         }
     }
@@ -465,6 +536,16 @@ int run(const vtt::AppOptions& options) {
                   << std::setprecision(1) << "throughput  tracker " << 1000.0 / latency.mean()
                   << " fps  pipeline " << static_cast<double>(index) / std::max(wall_s, 1e-9)
                   << " fps\n";
+    }
+    if (capture_ms.count() > 0) {
+        std::cout << std::setprecision(3) << "capture ms  mean " << capture_ms.mean() << "  p95 "
+                  << capture_ms.percentile(95.0) << '\n';
+    }
+    if (options.detector) {
+        std::cout << std::setprecision(3) << "detector rtt ms  mean " << detector_rtt.mean() << "  p50 "
+                  << detector_rtt.percentile(50.0) << "  p95 " << detector_rtt.percentile(95.0)
+                  << ", replies " << replies << ", refines " << refines << ", re-anchors " << reanchors
+                  << '\n';
     }
     int exit_code = 0;
     if (accuracy.count() > 0) {
