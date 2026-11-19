@@ -29,6 +29,11 @@ struct AppOptions {
     std::optional<double> min_iou;      ///< Exit non-zero if mean IoU is lower.
     std::optional<double> max_center_error;
     int click_box = 80;                 ///< Square side, in px, locked by a click (16..400).
+    std::optional<std::string> detector;  ///< "HOST:PORT" of the detector; enables detect + track.
+    int detector_listen = 5602;         ///< Local UDP port for detector replies.
+    int detect_every = 1;               ///< Send every Nth frame to the detector (1..30).
+    double detector_confidence = 0.5;   ///< Minimum detection confidence (0..1).
+    bool auto_lock = false;             ///< Lock onto detections when nothing is locked.
     bool show_help = false;
     bool show_version = false;
 };

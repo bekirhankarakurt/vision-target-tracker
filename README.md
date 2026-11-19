@@ -61,6 +61,35 @@ python python/vtt_detect.py --source webcam --classes bottle,person --track --cs
 
 If the Orbbec SDK is missing or no device is found, the default `--source orbbec` prints a warning and uses webcam 0. Distance is the median of the valid depth pixels in the central 40% of each box, in metres. The CLI, the CSV columns, and the unit tests are in [python/README.md](python/README.md).
 
+## Detect + track (YOLO corrects the tracker)
+
+A correlation filter only knows the pixels inside the first box. On a hand-held deodorant (KCF, 1280x720, box 115x367 px) it drifted onto the static desk with a high PSR (150-250) and a scale of 1.47: confident, wrong, never `LOST`. A trained YOLO model finds the object every frame but needs a GPU. Together they are fast and stay on target.
+
+```
+camera -> vtt (tracker, GUI) --UDP JPEG frames--> python/vtt_detector_server.py (YOLO)
+              ^                                              |
+              +--------------- "DET id x y w h conf" --------+
+```
+
+`DetectionFusion` (`src/fusion.cpp`, unit-tested) decides what a detection does:
+
+| Situation | Action |
+|---|---|
+| Nothing locked, `--auto-lock`, 2 consistent detections | lock onto the object |
+| Locked target overlaps a detection | target becomes *detector-backed* |
+| Backed target, IoU 0.30-0.75 with a fresh detection | **refine** now, shifted by the tracker's own motion since that frame (hides the reply delay) |
+| Backed target, IoU < 0.30 twice in a row, or `LOST` | **re-anchor** on the detection |
+| Target the detector never confirmed (a cup you clicked) | never overridden |
+
+Detections are compared with the tracker box of the frame they were computed on, not the current one. The server drops frames that queued up while YOLO was busy, so it always answers the newest frame.
+
+Protocol: frame datagram = `"VTF1"`, uint32 frame id, uint16 width, uint16 height (little endian) + JPEG at most 640 px wide. Reply = `DET <id> <x> <y> <w> <h> <conf>` in original pixels, or `NONE <id>`.
+
+```bash
+python python/vtt_detector_server.py --model python/models/deodorant_seg2.pt
+./build/vtt --camera 0 --detector 127.0.0.1:5601 --auto-lock
+```
+
 ## Requirements
 
 | Item | Version | Notes |

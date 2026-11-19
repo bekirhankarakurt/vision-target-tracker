@@ -1,5 +1,7 @@
 #include "vtt/cli.hpp"
 
+#include "vtt/udp.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstdlib>
@@ -34,10 +36,11 @@ std::optional<long> to_long(const std::string& text) {
 }
 
 bool takes_value(const std::string& flag) {
-    static const std::array<const char*, 19> flags{
+    static const std::array<const char*, 23> flags{
         "--input", "-i", "--camera", "--algo", "--roi", "--gt", "--csv", "--output",
         "--max-frames", "--psr-threshold", "--hfov", "--pid-kp", "--pid-ki", "--pid-kd",
-        "--max-rate", "--max-accel", "--min-iou", "--max-center-error", "--click-box"};
+        "--max-rate", "--max-accel", "--min-iou", "--max-center-error", "--click-box",
+        "--detector", "--detector-listen", "--detect-every", "--det-conf"};
     return std::any_of(flags.begin(), flags.end(), [&flag](const char* f) { return flag == f; });
 }
 
@@ -96,6 +99,8 @@ ParseResult parse_arguments(const std::vector<std::string>& args) {
             o.show_version = true;
         } else if (flag == "--headless") {
             o.headless = true;
+        } else if (flag == "--auto-lock") {
+            o.auto_lock = true;
         } else if (flag == "--no-scale") {
             o.disable_scale = true;
         } else if (flag == "--input" || flag == "-i") {
@@ -181,6 +186,28 @@ ParseResult parse_arguments(const std::vector<std::string>& args) {
                 return fail("invalid click box: " + value + " (expected 16..400)");
             }
             o.click_box = static_cast<int>(*size);
+        } else if (flag == "--detector") {
+            if (!parse_endpoint(value)) {
+                return fail("invalid detector address: " + value + " (expected HOST:PORT)");
+            }
+            o.detector = value;
+        } else if (flag == "--detector-listen") {
+            const auto port = to_long(value);
+            if (!port || *port < 1 || *port > 65535) {
+                return fail("invalid detector listen port: " + value);
+            }
+            o.detector_listen = static_cast<int>(*port);
+        } else if (flag == "--detect-every") {
+            const auto every = to_long(value);
+            if (!every || *every < 1 || *every > 30) {
+                return fail("invalid --detect-every: " + value + " (expected 1..30)");
+            }
+            o.detect_every = static_cast<int>(*every);
+        } else if (flag == "--det-conf") {
+            if (!number() || *number() < 0.0 || *number() > 1.0) {
+                return fail("invalid detector confidence: " + value);
+            }
+            o.detector_confidence = *number();
         } else {
             return fail("unknown option: " + flag);
         }
@@ -205,6 +232,13 @@ Tracker
       --click-box N         Square locked by a click, in pixels (default: 80, range 16..400)
       --no-scale            Disable the scale pyramid
       --psr-threshold X     Override the PSR tracking threshold
+
+Detect + track (python/vtt_detector_server.py runs YOLO)
+      --detector HOST:PORT  Send frames to a detector, e.g. 127.0.0.1:5601
+      --detector-listen N   UDP port for detector replies (default: 5602)
+      --detect-every N      Send every Nth frame (default: 1, range 1..30)
+      --det-conf X          Minimum detection confidence (default: 0.5)
+      --auto-lock           Lock onto the detected object when nothing is locked
 
 Gimbal simulation
       --hfov DEG            Scene camera horizontal FOV (default: 60)

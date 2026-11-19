@@ -104,6 +104,20 @@ VTT_TEST(cli_rejects_invalid_input) {
     CHECK(click.options.click_box == 400);
     CHECK(parse_arguments({"--click-box=16"}).options.click_box == 16);
     CHECK(parse_arguments({}).options.click_box == 80);
+    const ParseResult det = parse_arguments({"--detector", "127.0.0.1:5601", "--detector-listen", "6000",
+                                             "--detect-every", "5", "--det-conf", "0.4", "--auto-lock"});
+    CHECK(det.ok());
+    CHECK(det.options.detector && *det.options.detector == "127.0.0.1:5601");
+    CHECK(det.options.detector_listen == 6000 && det.options.detect_every == 5);
+    CHECK(det.options.detector_confidence > 0.39 && det.options.detector_confidence < 0.41);
+    CHECK(det.options.auto_lock);
+    CHECK(!parse_arguments({}).options.detector && parse_arguments({}).options.detect_every == 1);
+    CHECK(!parse_arguments({"--detector", "localhost"}).ok());
+    CHECK(!parse_arguments({"--detect-every", "0"}).ok());
+    CHECK(!parse_arguments({"--detect-every", "31"}).ok());
+    CHECK(!parse_arguments({"--det-conf", "1.5"}).ok());
+    CHECK(!parse_arguments({"--detector-listen", "0"}).ok());
+    CHECK(!parse_arguments({"--auto-lock=1"}).ok());
     CHECK(parse_arguments({"--help"}).options.show_help);
     CHECK(!usage().empty());
     CHECK(parse_rect("1.5,2,3,4").has_value());

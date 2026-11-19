@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pyorbbecsdk2` is required only for Orbbec cameras. See `python/README.md`.
 - `python/vtt_custom.py`: captures sessions, labels them with SAM 2, builds leak-free splits and trains a YOLO segmentation model for a custom object.
   Detections also draw segmentation masks.
+- Detect + track: `--detector HOST:PORT` streams frames over UDP to `python/vtt_detector_server.py` (YOLO), whose boxes correct the correlation tracker. `DetectionFusion` auto-locks (`--auto-lock`), re-anchors a drifted target after two disagreeing detections, refines small drift at once with motion compensation for the reply delay, and never overrides a target the detector has not confirmed. Options `--detector-listen`, `--detect-every`, `--det-conf`. Launcher `python/run_detect_track.ps1`.
 
 ### Changed
 

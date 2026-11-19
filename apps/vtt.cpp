@@ -2,20 +2,24 @@
 
 #include "vtt/cli.hpp"
 #include "vtt/csv.hpp"
+#include "vtt/fusion.hpp"
 #include "vtt/gimbal.hpp"
 #include "vtt/metrics.hpp"
 #include "vtt/overlay.hpp"
 #include "vtt/selection.hpp"
 #include "vtt/tracker.hpp"
+#include "vtt/udp.hpp"
 
 #include <opencv2/core/utility.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <exception>
 #include <iomanip>
 #include <iostream>
@@ -32,6 +36,38 @@ constexpr const char* kWindow = "vision-target-tracker";
 constexpr int kKeyEscape = 27;
 constexpr int kExitThreshold = 2;
 const cv::Scalar kRubberBand(255, 0, 255);
+const cv::Scalar kDetection(255, 255, 0);
+constexpr int kDetectorMaxWidth = 640;
+constexpr std::size_t kMaxDatagram = 60000;
+constexpr long kShowDetectionFrames = 10;
+
+/// JPEG-encode @p frame (at most 640 px wide) behind a VTF1 header and send it.
+bool send_frame(vtt::UdpSocket& socket, const vtt::Endpoint& to, const cv::Mat& frame, long frame_id) {
+    cv::Mat small = frame;
+    if (frame.cols > kDetectorMaxWidth) {
+        const double s = static_cast<double>(kDetectorMaxWidth) / static_cast<double>(frame.cols);
+        cv::resize(frame, small, cv::Size(), s, s, cv::INTER_AREA);
+    }
+    std::vector<std::uint8_t> jpeg;
+    for (int quality = 80; quality >= 30; quality -= 10) {
+        if (!cv::imencode(".jpg", small, jpeg, {cv::IMWRITE_JPEG_QUALITY, quality})) {
+            return false;
+        }
+        if (jpeg.size() + vtt::kFrameHeaderSize <= kMaxDatagram) {
+            break;
+        }
+    }
+    if (jpeg.size() + vtt::kFrameHeaderSize > kMaxDatagram) {
+        return false;
+    }
+    vtt::FrameHeader header;
+    header.frame_id = static_cast<std::uint32_t>(frame_id);
+    header.width = static_cast<std::uint16_t>(frame.cols);
+    header.height = static_cast<std::uint16_t>(frame.rows);
+    std::vector<std::uint8_t> datagram = vtt::encode_frame_header(header);
+    datagram.insert(datagram.end(), jpeg.begin(), jpeg.end());
+    return socket.send_to(to.host, to.port, datagram);
+}
 
 double elapsed_ms(Clock::time_point start, Clock::time_point end) {
     return std::chrono::duration<double, std::milli>(end - start).count();
@@ -219,6 +255,26 @@ int run(const vtt::AppOptions& options) {
         mouse_guard.arm(on_mouse, &pointer);
     }
 
+    // Detect + track: frames go to an external detector, its replies correct the tracker.
+    std::optional<vtt::Endpoint> detector_at;
+    std::optional<vtt::UdpSocket> detector_tx;
+    std::optional<vtt::UdpSocket> detector_rx;
+    if (options.detector) {
+        detector_at = vtt::parse_endpoint(*options.detector);
+        detector_tx.emplace(static_cast<std::uint16_t>(0));
+        detector_rx.emplace(static_cast<std::uint16_t>(options.detector_listen));
+    }
+    vtt::FusionConfig fusion_config;
+    fusion_config.min_confidence = options.detector_confidence;
+    fusion_config.auto_lock = options.auto_lock;
+    vtt::DetectionFusion fusion(fusion_config);
+    std::optional<vtt::Detection> last_detection;
+    long reanchors = 0;
+    long refines = 0;
+    long detections_in_window = 0;
+    double detection_rate = 0.0;
+    Clock::time_point detection_window = Clock::now();
+
     long index = 0;
     const Clock::time_point run_start = Clock::now();
     Clock::time_point last_loop = run_start;
@@ -231,8 +287,9 @@ int run(const vtt::AppOptions& options) {
         track = vtt::TrackOutput{};
         last_latency = 0.0;
         selector.cancel_drag();
+        fusion.on_target_changed(false);
     };
-    const auto lock_target = [&](const cv::Rect2d& box) {
+    const auto lock_target = [&](const cv::Rect2d& box, bool from_detector = false) {
         if (box.width < 2.0 || box.height < 2.0) {
             return;
         }
@@ -242,6 +299,7 @@ int run(const vtt::AppOptions& options) {
         track.state = vtt::TrackState::Tracking;
         track.box = box;
         track.predicted = (box.tl() + box.br()) * 0.5;
+        fusion.on_target_changed(true, from_detector);
     };
     const auto apply_events = [&]() {
         for (const vtt::SelectionEvent& event : pointer.events) {
@@ -284,6 +342,24 @@ int run(const vtt::AppOptions& options) {
                 draw_rubber_band(canvas, *band);
             }
         }
+        if (detector_tx) {
+            if (last_detection && last_detection->box &&
+                index - last_detection->frame_id <= kShowDetectionFrames) {
+                const cv::Rect2d& b = *last_detection->box;
+                cv::rectangle(canvas, cv::Rect(cvRound(b.x), cvRound(b.y), cvRound(b.width), cvRound(b.height)),
+                              kDetection, 1, cv::LINE_AA);
+                const std::string label = cv::format("YOLO %.2f", last_detection->confidence);
+                cv::putText(canvas, label, cv::Point(cvRound(b.x), std::max(12, cvRound(b.y) - 4)),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.5, kDetection, 1, cv::LINE_AA);
+            }
+            const std::string status =
+                cv::format("DET on  %.1f/s  refine %ld  re-anchor %ld%s", detection_rate, refines, reanchors,
+                           fusion.detector_backed() ? "  [backed]" : "");
+            cv::putText(canvas, status, cv::Point(10, canvas.rows - 12), cv::FONT_HERSHEY_SIMPLEX, 0.55,
+                        cv::Scalar(0, 0, 0), 3, cv::LINE_AA);
+            cv::putText(canvas, status, cv::Point(10, canvas.rows - 12), cv::FONT_HERSHEY_SIMPLEX, 0.55,
+                        kDetection, 1, cv::LINE_AA);
+        }
         return canvas;
     };
 
@@ -294,6 +370,35 @@ int run(const vtt::AppOptions& options) {
             track = tracker.update(frame);
             last_latency = elapsed_ms(t0, Clock::now());
             latency.add(last_latency);
+        }
+        if (detector_tx && detector_rx && detector_at) {
+            fusion.record(index, target_locked ? track.state : vtt::TrackState::Idle, track.box);
+            if (index % options.detect_every == 0) {
+                static_cast<void>(send_frame(*detector_tx, *detector_at, frame, index));
+            }
+            while (const auto bytes = detector_rx->try_receive()) {
+                const auto detection = vtt::parse_detection_line(std::string(bytes->begin(), bytes->end()));
+                if (!detection) {
+                    continue;
+                }
+                ++detections_in_window;
+                last_detection = *detection;
+                const vtt::FusionDecision decision = fusion.on_detection(*detection, index);
+                if (decision.action != vtt::FusionAction::None) {
+                    lock_target(decision.box, true);
+                    if (decision.action == vtt::FusionAction::Reanchor) {
+                        ++reanchors;
+                    } else if (decision.action == vtt::FusionAction::Refine) {
+                        ++refines;
+                    }
+                }
+            }
+            const double window_s = elapsed_ms(detection_window, Clock::now()) / 1000.0;
+            if (window_s >= 1.0) {
+                detection_rate = static_cast<double>(detections_in_window) / window_s;
+                detections_in_window = 0;
+                detection_window = Clock::now();
+            }
         }
         const Clock::time_point now = Clock::now();
         const double wall_dt = elapsed_ms(last_loop, now) / 1000.0;

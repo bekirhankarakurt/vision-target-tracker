@@ -21,7 +21,7 @@ option(VTT_ENABLE_SANITIZERS "Build with AddressSanitizer and UndefinedBehaviorS
 option(VTT_ENABLE_COVERAGE "Build with gcov instrumentation" OFF)
 option(VTT_NATIVE_ARCH "Optimise for the host CPU (-march=native)" OFF)
 
-find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc videoio highgui)
+find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc imgcodecs videoio highgui)
 
 include(cmake/CompilerOptions.cmake)
 
@@ -42,16 +42,21 @@ add_library(vtt_core STATIC
   src/overlay.cpp
   src/csv.cpp
   src/cli.cpp
-  src/selection.cpp)
+  src/selection.cpp
+  src/fusion.cpp
+  src/udp.cpp)
 target_include_directories(vtt_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_include_directories(vtt_core SYSTEM PUBLIC ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(vtt_core PUBLIC opencv_core opencv_imgproc)
+if(WIN32)
+  target_link_libraries(vtt_core PUBLIC ws2_32)
+endif()
 target_compile_definitions(vtt_core PUBLIC VTT_VERSION="${PROJECT_VERSION}")
 vtt_set_project_options(vtt_core)
 
 if(VTT_BUILD_APPS)
   add_executable(vtt apps/vtt.cpp)
-  target_link_libraries(vtt PRIVATE vtt_core opencv_videoio opencv_highgui)
+  target_link_libraries(vtt PRIVATE vtt_core opencv_imgcodecs opencv_videoio opencv_highgui)
   vtt_set_project_options(vtt)
 
   add_executable(vtt_synth apps/vtt_synth.cpp)

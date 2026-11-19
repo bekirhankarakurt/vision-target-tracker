@@ -1,4 +1,4 @@
-set(VTT_UNIT_TESTS spectral filters scale kalman control tracking utils selection)
+set(VTT_UNIT_TESTS spectral filters scale kalman control tracking utils selection fusion)
 
 foreach(name IN LISTS VTT_UNIT_TESTS)
   add_executable(test_${name} test_${name}.cpp)
