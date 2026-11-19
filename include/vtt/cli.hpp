@@ -28,6 +28,7 @@ struct AppOptions {
     GimbalConfig gimbal{};
     std::optional<double> min_iou;      ///< Exit non-zero if mean IoU is lower.
     std::optional<double> max_center_error;
+    int click_box = 80;                 ///< Square side, in px, locked by a click (16..400).
     bool show_help = false;
     bool show_version = false;
 };

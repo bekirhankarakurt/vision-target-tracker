@@ -41,7 +41,8 @@ add_library(vtt_core STATIC
   src/synthetic.cpp
   src/overlay.cpp
   src/csv.cpp
-  src/cli.cpp)
+  src/cli.cpp
+  src/selection.cpp)
 target_include_directories(vtt_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_include_directories(vtt_core SYSTEM PUBLIC ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(vtt_core PUBLIC opencv_core opencv_imgproc)

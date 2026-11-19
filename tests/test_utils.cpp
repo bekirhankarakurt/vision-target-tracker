@@ -69,13 +69,14 @@ VTT_TEST(cli_parses_full_command_line) {
     const ParseResult r = parse_arguments({"-i", "video.avi", "--algo=mosse", "--roi", "10,20,30,40",
                                            "--headless", "--csv", "out.csv", "--max-frames", "50",
                                            "--pid-kp", "3.5", "--max-rate", "90", "--hfov", "45",
-                                           "--min-iou", "0.6", "--no-scale"});
+                                           "--min-iou", "0.6", "--no-scale", "--click-box", "96"});
     CHECK(r.ok());
     const AppOptions& o = r.options;
     CHECK(o.input && *o.input == "video.avi");
     CHECK(o.algorithm == Algorithm::Mosse);
     CHECK(o.roi && o.roi->x == 10.0 && o.roi->height == 40.0);
     CHECK(o.headless && o.disable_scale);
+    CHECK(o.click_box == 96);
     CHECK(o.max_frames == 50);
     CHECK_NEAR(o.gimbal.pan_pid.kp, 3.5, 1e-12);
     CHECK_NEAR(o.gimbal.tilt_pid.kp, 3.5, 1e-12);
@@ -94,6 +95,15 @@ VTT_TEST(cli_rejects_invalid_input) {
     CHECK(!parse_arguments({"--headless=1"}).ok());
     CHECK(!parse_arguments({"--hfov", "200"}).ok());
     CHECK(!parse_arguments({"--min-iou", "x"}).ok());
+    CHECK(!parse_arguments({"--click-box", "15"}).ok());
+    CHECK(!parse_arguments({"--click-box", "401"}).ok());
+    CHECK(!parse_arguments({"--click-box", "abc"}).ok());
+    CHECK(!parse_arguments({"--click-box"}).ok());
+    const ParseResult click = parse_arguments({"--click-box", "400"});
+    CHECK(click.ok());
+    CHECK(click.options.click_box == 400);
+    CHECK(parse_arguments({"--click-box=16"}).options.click_box == 16);
+    CHECK(parse_arguments({}).options.click_box == 80);
     CHECK(parse_arguments({"--help"}).options.show_help);
     CHECK(!usage().empty());
     CHECK(parse_rect("1.5,2,3,4").has_value());

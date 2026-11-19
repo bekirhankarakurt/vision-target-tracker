@@ -38,7 +38,7 @@ ctest --test-dir build
 ```
 
 ```bash
-./build/vtt                     # webcam 0: draw a box around the target, press ENTER
+./build/vtt                     # webcam 0: live view; drag a box or click an object to lock it
 ```
 
 No camera? Generate the synthetic sequence and track it headless:
@@ -88,8 +88,9 @@ If the Orbbec SDK is missing or no device is found, the default `--source orbbec
 ```text
 vtt [options]
   -i, --input PATH          Video file (default: webcam)       --camera N        Webcam index (0)
-      --algo mosse|kcf      Correlation filter (kcf)           --roi x,y,w,h     Initial box (default: mouse)
-      --no-scale            Disable scale estimation           --psr-threshold X Override tracking PSR gate
+      --algo mosse|kcf      Correlation filter (kcf)           --roi x,y,w,h     Initial box (omit in the GUI to pick live)
+      --click-box N         Click-lock square side (80 px)     --no-scale        Disable scale estimation
+      --psr-threshold X     Override tracking PSR gate
       --hfov DEG            Scene camera FOV (60)              --max-rate DPS    Gimbal rate limit (120)
       --pid-kp/-ki/-kd X    PID gains (10 / 20 / 0.1)          --max-accel DPS2  Gimbal accel limit (600)
       --headless            No window (needs --roi or --gt)    --csv PATH        Per-frame telemetry CSV
@@ -99,25 +100,33 @@ vtt [options]
 
 Run `./build/vtt --help` for the full text. At exit `vtt` prints latency (mean/p50/p95/max), throughput and, with `--gt`, mean IoU, centre error, success rate and precision.
 
-### Keyboard controls
+### Controls
 
-| Key | Action |
+The GUI window shows the live camera immediately. With no target the tracker stays `IDLE` and the gimbal receives no aim. Drag a rectangle on the video and release to lock it when the box is at least 8×8 px, or click to lock a `--click-box` square (default 80 px, range 16..400) centred on the click. Right-click or `x` releases the target. A drag or click while tracking switches to the new target. `--roi` and `--gt` still lock on the first frame, in the GUI and in `--headless`.
+
+The gimbal inset is painted on the camera frame at the same image size, so mouse positions map directly to frame pixels. Presses outside the frame are ignored.
+
+| Input | Action |
 |---|---|
+| Drag | Rubber-band a box on the live video; release locks it when it is at least 8×8 px |
+| Click | Lock a square of `--click-box` pixels (default 80) centred on the click |
+| Right click / `x` | Release the target (`IDLE`) |
 | `q` / `Esc` | Quit |
 | `Space` | Pause / resume |
-| `r` | Re-select the target with the mouse |
-| `a` | Switch MOSSE ↔ KCF (re-initialised on the current box) |
+| `a` | Switch MOSSE ↔ KCF (re-initialised only while a target is locked) |
 | `g` | Toggle the gimbal payload inset |
 | `c` | Re-centre the gimbal |
 | `h` | Toggle the help panel |
 
 ### Recipes
 
-**Webcam with mouse selection** (laptop camera, KCF):
+**Webcam with live selection** (laptop camera, KCF):
 
 ```bash
-./build/vtt --camera 0 --algo kcf
+./build/vtt --camera 0 --algo kcf --click-box 96
 ```
+
+The stream keeps running. Drag a box around the object, or click it to lock a 96 px square. Right-click or `x` lets go.
 
 **Video file with a known start box, saving telemetry and an annotated video:**
 
@@ -240,6 +249,7 @@ ctest --test-dir build --output-on-failure
 | `unit.control` | PID saturation, anti-windup, integral clamp; gimbal convergence, rate/accel/angle limits |
 | `unit.tracking` | Full pipeline on synthetic video: IoU > 0.65, centre error < 8 px, OCCLUDED during occlusion, LOST → reacquire |
 | `unit.utils` | Metrics, CLI parsing, CSV I/O, overlay rendering |
+| `unit.selection` | Drag, click, edge clamp, release, and the rubber band |
 | `integration.*` | `vtt_synth` → `vtt --headless --gt --min-iou 0.65 --max-center-error 8` for both algorithms, overlay video |
 
 CI additionally runs the suite under ASan/UBSan, clang-tidy (`.clang-tidy`, warnings as errors), cppcheck and CodeQL, and publishes coverage to GitHub Pages.
@@ -274,6 +284,7 @@ CI additionally runs the suite under ASan/UBSan, clang-tidy (`.clang-tidy`, warn
 │   ├── kalman.hpp           # constant-velocity Kalman filter
 │   ├── pid.hpp gimbal.hpp   # control loop and 2-axis gimbal model
 │   ├── synthetic.hpp        # deterministic test scene
+│   ├── selection.hpp        # live drag / click / release gestures
 │   └── overlay.hpp csv.hpp cli.hpp metrics.hpp types.hpp
 ├── src/                     # implementations
 ├── tests/                   # CTest suites + minimal harness, LSan suppressions

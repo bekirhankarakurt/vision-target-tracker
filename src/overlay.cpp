@@ -87,10 +87,19 @@ void draw_gimbal_view(cv::Mat& canvas, const cv::Mat& source, const GimbalSim& g
 }
 
 void draw_help(cv::Mat& canvas) {
-    static const std::array<const char*, 9> lines{
-        "KEYS",           "q / ESC  quit",       "SPACE    pause",
-        "r        select ROI", "a        MOSSE <-> KCF", "g        gimbal view",
-        "c        center gimbal", "s        snapshot", "h        help"};
+    static const std::array<const char*, 12> lines{
+        "KEYS",
+        "q / ESC  quit",
+        "SPACE    pause",
+        "x        release",
+        "a        MOSSE <-> KCF",
+        "g        gimbal view",
+        "c        center gimbal",
+        "h        help",
+        "MOUSE",
+        "drag     lock a box",
+        "click    lock object",
+        "right    release"};
     const cv::Rect box(canvas.cols - 230, 10, 220, 22 + 18 * static_cast<int>(lines.size()));
     shade(canvas, box, 0.6);
     int y = box.y + 22;
@@ -99,6 +108,26 @@ void draw_help(cv::Mat& canvas) {
                     cv::LINE_AA);
         y += 18;
     }
+}
+
+void draw_idle_hint(cv::Mat& canvas) {
+    static constexpr const char* kHint =
+        "Drag a box or click an object to lock  |  right-click/x = release";
+    int baseline = 0;
+    double scale = kFontScale;
+    cv::Size text = cv::getTextSize(kHint, kFont, scale, 1, &baseline);
+    constexpr int kMargin = 8;
+    if (canvas.cols > kMargin * 2 && text.width > canvas.cols - kMargin * 2) {
+        scale *= static_cast<double>(canvas.cols - kMargin * 2) / static_cast<double>(text.width);
+        text = cv::getTextSize(kHint, kFont, scale, 1, &baseline);
+    }
+    const int box_w = text.width + kMargin * 2;
+    const int box_h = text.height + baseline + kMargin * 2;
+    const int x = std::max(0, (canvas.cols - box_w) / 2);
+    const int y = std::max(0, canvas.rows - box_h - kMargin);
+    shade(canvas, cv::Rect(x, y, box_w, box_h), 0.6);
+    cv::putText(canvas, kHint, cv::Point(x + kMargin, y + kMargin + text.height), kFont, scale,
+                kWhite, 1, cv::LINE_AA);
 }
 
 }  // namespace
@@ -169,6 +198,9 @@ void draw_overlay(cv::Mat& canvas, const TrackOutput& track, const GimbalSim& gi
     }
     if (options.show_help) {
         draw_help(canvas);
+    }
+    if (track.state == TrackState::Idle) {
+        draw_idle_hint(canvas);
     }
 }
 

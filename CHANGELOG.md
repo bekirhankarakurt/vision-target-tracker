@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `python/vtt_custom.py`: captures sessions, labels them with SAM 2, builds leak-free splits and trains a YOLO segmentation model for a custom object.
   Detections also draw segmentation masks.
 
+### Changed
+
+- GUI target selection runs on the live video. The window opens immediately with the tracker `IDLE` and no gimbal aim until a drag (at least 8x8 px) or a click locks a target; right-click or `x` releases it, and a new gesture switches targets. `--click-box` sets the click square (default 80, range 16..400). `--roi` / `--gt` still initialise immediately, including in `--headless`.
+
 ### Fixed
 
 - `unit.utils` crashed on Windows because it deleted a CSV file that was still open.

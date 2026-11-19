@@ -34,10 +34,10 @@ std::optional<long> to_long(const std::string& text) {
 }
 
 bool takes_value(const std::string& flag) {
-    static const std::array<const char*, 18> flags{
+    static const std::array<const char*, 19> flags{
         "--input", "-i", "--camera", "--algo", "--roi", "--gt", "--csv", "--output",
         "--max-frames", "--psr-threshold", "--hfov", "--pid-kp", "--pid-ki", "--pid-kd",
-        "--max-rate", "--max-accel", "--min-iou", "--max-center-error"};
+        "--max-rate", "--max-accel", "--min-iou", "--max-center-error", "--click-box"};
     return std::any_of(flags.begin(), flags.end(), [&flag](const char* f) { return flag == f; });
 }
 
@@ -175,6 +175,12 @@ ParseResult parse_arguments(const std::vector<std::string>& args) {
                 return fail("invalid centre error threshold: " + value);
             }
             o.max_center_error = number();
+        } else if (flag == "--click-box") {
+            const auto size = to_long(value);
+            if (!size || *size < 16 || *size > 400) {
+                return fail("invalid click box: " + value + " (expected 16..400)");
+            }
+            o.click_box = static_cast<int>(*size);
         } else {
             return fail("unknown option: " + flag);
         }
@@ -195,7 +201,8 @@ Input
 
 Tracker
       --algo mosse|kcf      Correlation filter (default: kcf)
-      --roi x,y,w,h         Initial target box (default: select with the mouse)
+      --roi x,y,w,h         Initial target box (GUI default: drag or click the live view)
+      --click-box N         Square locked by a click, in pixels (default: 80, range 16..400)
       --no-scale            Disable the scale pyramid
       --psr-threshold X     Override the PSR tracking threshold
 
